@@ -1,5 +1,12 @@
 import { hashOperation, hashPayloadPart } from '../../domain/canonicalJson.ts'
-import { checkinBundleSchema, consentChangeSchema, measurementOperationSchema, profilePreferencesSchema, reportBundleSchema } from '../../domain/operation.ts'
+import {
+  checkinBundleSchema,
+  consentChangeSchema,
+  measurementOperationSchema,
+  profilePreferencesSchema,
+  reportAckSchema,
+  reportBundleSchema,
+} from '../../domain/operation.ts'
 import { SCHEMA_VERSION } from '../../domain/schemaVersion.ts'
 import type { GeneralPayload } from '../../domain/generalPayload.ts'
 import type { PersonalPayload } from '../../domain/personalPayload.ts'
@@ -604,7 +611,19 @@ export async function applyOutboxResult(
     serverReceiptId: string | null
   },
 ): Promise<'applied' | 'stale'> {
-  return database.transaction('rw', [database.outbox, database.receipts, database.localCheckins, database.localMeasurements, database.localReports, database.consentCache, database.localAudit], async () => {
+  return database.transaction(
+    'rw',
+    [
+      database.outbox,
+      database.receipts,
+      database.localCheckins,
+      database.localMeasurements,
+      database.localReports,
+      database.localMessages,
+      database.consentCache,
+      database.localAudit,
+    ],
+    async () => {
     const current = await database.outbox.get(claimed.operation_id)
     if (!current || !sameOwner(current, scope) || current.lease_until !== claimed.lease_until) return 'stale'
     await database.outbox.put({
@@ -642,6 +661,15 @@ export async function applyOutboxResult(
     if (claimed.entity_type === 'consent_change') {
       const consent = await database.consentCache.get(claimed.entity_id)
       if (consent && sameOwner(consent, scope)) await database.consentCache.put({ ...consent, applied_on_server: true })
+    }
+    if (claimed.entity_type === 'report_ack') {
+      const payload = claimed.frozen_payload as { ack_type?: string; message_id?: string | null }
+      if (payload.ack_type === 'patient_read' && typeof payload.message_id === 'string') {
+        const message = await database.localMessages.get(payload.message_id)
+        if (message && sameOwner(message, scope)) {
+          await database.localMessages.put({ ...message, read_server_at: patch.nextAttemptAt })
+        }
+      }
     }
     await writeAudit(database, scope, 'server_receipt', claimed.operation_id, claimed.entity_id, patch.nextAttemptAt)
     return 'applied'
@@ -925,15 +953,105 @@ export async function listMessages(database: ArtemiaDb, scope: Scope, reportId: 
 export async function saveMessages(database: ArtemiaDb, scope: Scope, messages: LocalMessage[]): Promise<void> {
   await database.transaction('rw', database.localMessages, async () => {
     for (const message of messages) {
-      if (sameOwner(message, scope)) await database.localMessages.put(message)
+      if (!sameOwner(message, scope)) continue
+      const existing = await database.localMessages.get(message.id)
+      await database.localMessages.put({
+        ...message,
+        read_at: existing?.read_at ?? message.read_at,
+        read_server_at: existing?.read_server_at ?? message.read_server_at ?? null,
+      })
     }
   })
 }
 
-export async function markMessageRead(database: ArtemiaDb, scope: Scope, messageId: string, readAt: string): Promise<void> {
-  const row = await database.localMessages.get(messageId)
-  if (!row || !sameOwner(row, scope)) return
-  await database.localMessages.put({ ...row, read_at: readAt })
+export async function queueReportAck(
+  database: ArtemiaDb,
+  scope: Scope,
+  input: {
+    reportId: string
+    missionId: string
+    ackType: 'device_received' | 'patient_read'
+    messageId: string | null
+    recordedAt: string
+    operationId: string
+  },
+): Promise<{ status: 'queued' | 'duplicate' }> {
+  const payload = reportAckSchema.parse({
+    id: input.operationId,
+    report_id: input.reportId,
+    mission_id: input.missionId,
+    ack_type: input.ackType,
+    message_id: input.messageId,
+    recorded_at: input.recordedAt,
+    created_at_device: input.recordedAt,
+  })
+  const existing = await database.outbox
+    .where('[owner_id+environment_id]')
+    .equals([scope.ownerId, scope.environmentId])
+    .filter((row) => {
+      if (!sameOwner(row, scope) || row.entity_type !== 'report_ack') return false
+      const frozen = row.frozen_payload as { ack_type?: string; report_id?: string; message_id?: string | null }
+      return (
+        frozen.ack_type === input.ackType &&
+        frozen.report_id === input.reportId &&
+        (input.ackType !== 'patient_read' || frozen.message_id === input.messageId)
+      )
+    })
+    .first()
+  if (existing) return { status: 'duplicate' }
+  const hash = await hashOperation({ schemaVersion: SCHEMA_VERSION, type: 'report_ack', payload })
+  const now = input.recordedAt
+  await database.transaction('rw', [database.outbox, database.receipts, database.localAudit], async () => {
+    await database.outbox.put({
+      operation_id: input.operationId,
+      owner_id: scope.ownerId,
+      environment_id: scope.environmentId,
+      entity_type: 'report_ack',
+      entity_id: input.messageId ?? input.reportId,
+      payload_version: SCHEMA_VERSION,
+      frozen_payload: payload,
+      payload_hash: hash,
+      dependencies: [],
+      state: 'pending',
+      attempts: 0,
+      next_attempt_at: now,
+      last_error_code: null,
+      lease_until: null,
+      created_at: now,
+    })
+    await database.receipts.put({
+      operation_id: input.operationId,
+      owner_id: scope.ownerId,
+      environment_id: scope.environmentId,
+      entity_type: 'report_ack',
+      entity_id: input.messageId ?? input.reportId,
+      payload_hash: hash,
+      local_committed_at: now,
+      server_receipt_id: null,
+    })
+    await writeAudit(database, scope, `report_ack_${input.ackType}`, input.operationId, input.reportId, now)
+  })
+  return { status: 'queued' }
+}
+
+export async function markMessageRead(
+  database: ArtemiaDb,
+  scope: Scope,
+  message: LocalMessage,
+  missionId: string,
+  readAt: string,
+  operationId: string,
+): Promise<void> {
+  if (!sameOwner(message, scope)) return
+  await database.localMessages.put({ ...message, read_at: readAt, read_server_at: message.read_server_at ?? null })
+  await queueReportAck(database, scope, {
+    reportId: message.report_id,
+    missionId,
+    ackType: 'patient_read',
+    messageId: message.id,
+    recordedAt: readAt,
+    operationId,
+  })
 }
 
 function cursorId(scope: Scope): string {

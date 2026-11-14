@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.access import assignment_is_active, is_active_astronaut, personal_consent_granted
 from app.canonical import hash_operation, hash_payload_part
 from app.care_orders import apply_care_order_response_with_hash, validate_care_order_response
-from app.constants import OPERATION_TYPES, SCHEMA_VERSION
+from app.constants import OPERATION_TYPES, REPORT_ACK_TYPES, SCHEMA_VERSION
 from app.errors import ContractError, OperationResult
 from app.models import (
     AuditEvent,
@@ -24,6 +24,8 @@ from app.models import (
     CheckinPersonalRevision,
     CheckinRevision,
     ConsentEvent,
+    DoctorMessage,
+    DoctorPersonalMessage,
     InvalidationEvent,
     Measurement,
     MedicalAssignment,
@@ -569,6 +571,70 @@ def _apply_care_order_response(session: Session, actor_id: UUID, payload: dict[s
     return apply_care_order_response_with_hash(session, actor_id, clean, operation_id, payload_hash)
 
 
+def _apply_report_ack(session: Session, actor_id: UUID, payload: dict[str, Any]) -> dict[str, object]:
+    report_id = require_uuid(payload.get("report_id"), "report_id")
+    mission_id = require_uuid(payload.get("mission_id"), "mission_id")
+    ack_type = payload.get("ack_type")
+    if ack_type not in REPORT_ACK_TYPES:
+        raise ContractError("validation_error", "ack_type")
+    require_timestamp(payload.get("recorded_at"), "recorded_at")
+    require_timestamp(payload.get("created_at_device"), "created_at_device")
+    report = session.get(Report, report_id)
+    if report is None or report.mission_id != mission_id:
+        deny("report_not_found")
+    if report.subject_id != actor_id:
+        deny("report_not_owned")
+    if not is_active_astronaut(session, actor_id, mission_id):
+        deny("not_mission_astronaut")
+    message_id = None
+    if ack_type == "patient_read":
+        message_id = require_uuid(payload.get("message_id"), "message_id")
+        message = session.get(DoctorMessage, message_id) or session.get(DoctorPersonalMessage, message_id)
+        if message is None or message.report_id != report.id or message.subject_id != actor_id:
+            deny("message_not_owned")
+    existing = session.scalar(
+        select(ReportEvent).where(ReportEvent.report_id == report.id, ReportEvent.event_type == ack_type)
+    )
+    if existing is not None:
+        return {
+            "report_id": str(report.id),
+            "ack_type": ack_type,
+            "event_id": str(existing.id),
+            "created": False,
+            "message_id": None if message_id is None else str(message_id),
+        }
+    now = datetime.now(timezone.utc)
+    event_id = uuid4()
+    session.add(
+        ReportEvent(
+            id=event_id,
+            report_id=report.id,
+            subject_id=report.subject_id,
+            mission_id=report.mission_id,
+            event_type=ack_type,
+            actor_id=actor_id,
+            server_at=now,
+        )
+    )
+    assignment = session.get(MedicalAssignment, report.recipient_assignment_id)
+    if assignment is not None:
+        session.add(
+            ChangeLog(
+                scope=str(assignment.doctor_id),
+                entity_type="report_ack",
+                entity_id=report.id,
+                actor_id=actor_id,
+            )
+        )
+    return {
+        "report_id": str(report.id),
+        "ack_type": ack_type,
+        "event_id": str(event_id),
+        "created": True,
+        "message_id": None if message_id is None else str(message_id),
+    }
+
+
 _APPLY = {
     "checkin_bundle": _apply_checkin,
     "measurement": _apply_measurement,
@@ -577,4 +643,5 @@ _APPLY = {
     "profile_preferences": _apply_preferences,
     "consent_change": _apply_consent,
     "care_order_response": _apply_care_order_response,
+    "report_ack": _apply_report_ack,
 }

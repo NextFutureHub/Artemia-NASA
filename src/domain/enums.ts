@@ -59,8 +59,12 @@ export const OPERATION_TYPES = [
   'profile_preferences',
   'consent_change',
   'care_order_response',
+  'report_ack',
 ] as const
 export type OperationType = (typeof OPERATION_TYPES)[number]
+
+export const REPORT_ACK_TYPES = ['device_received', 'patient_read'] as const
+export type ReportAckType = (typeof REPORT_ACK_TYPES)[number]
 
 export const CARE_ORDER_KINDS = [
   'examination',

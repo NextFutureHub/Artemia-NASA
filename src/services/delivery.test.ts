@@ -81,6 +81,7 @@ test('another user does not send the queue', async () => {
     },
     pullChanges: async () => ({ status: 200, body: { events: [], next_cursor: '0' }, retryAfterSeconds: null }),
     refreshSession: async () => false,
+    refreshCareOrders: async () => undefined,
   })
   assert.equal(calls, 0)
   assert.equal((await database.outbox.get('op-1'))?.state, 'pending')
@@ -185,6 +186,43 @@ test('a consented personal part can be sent and a leak in the general snapshot c
   assert.equal(personalSendBlocked({ revision: { general_payload: { bleeding_category: 'none' } }, personal: null }), true)
 })
 
+test('care-order refresh failure does not block outbox acceptance', async () => {
+  const database = await seeded()
+  await database.outbox.put(item('op-1', 'pending'))
+  await database.localCheckins.put(checkin('entity-1'))
+  await database.receipts.put({
+    operation_id: 'op-1',
+    owner_id: OWNER,
+    environment_id: ENV,
+    entity_type: 'checkin_bundle',
+    entity_id: 'entity-1',
+    payload_hash: HASH,
+    local_committed_at: NOW,
+    server_receipt_id: null,
+  })
+  let careCalls = 0
+  await runDelivery({
+    database,
+    scope: { ownerId: OWNER, environmentId: ENV },
+    sessionUserId: OWNER,
+    token: 'token',
+    manual: true,
+    now: () => NOW,
+    random: () => 0.5,
+    postOperation: async () => accepted('receipt-1'),
+    pullChanges: async () => ({ status: 200, body: { events: [], next_cursor: '0' }, retryAfterSeconds: null }),
+    refreshSession: async () => false,
+    refreshCareOrders: async () => {
+      careCalls += 1
+      throw new Error('care_orders_down')
+    },
+  })
+  assert.equal(careCalls, 1)
+  assert.equal((await database.outbox.get('op-1'))?.state, 'accepted')
+  assert.equal((await database.receipts.get('op-1'))?.server_receipt_id, 'receipt-1')
+  await database.delete()
+})
+
 async function seeded(): Promise<ArtemiaDb> {
   const database = new ArtemiaDb(`artemia-journal-${crypto.randomUUID()}`)
   await database.open()
@@ -253,5 +291,6 @@ async function deliver(
     postOperation,
     pullChanges: extra.pullChanges ?? (async () => ({ status: 200, body: { events: [], next_cursor: '0' }, retryAfterSeconds: null })),
     refreshSession: async () => false,
+    refreshCareOrders: async () => undefined,
   })
 }

@@ -13,6 +13,7 @@ import {
   SHARING_MODES,
 } from './enums.ts'
 import { careOrderResponsePayloadSchema } from './careOrder.ts'
+import { REPORT_ACK_TYPES } from './enums.ts'
 import { generalPayloadSchema } from './generalPayload.ts'
 import { personalPayloadSchema } from './personalPayload.ts'
 import { SCHEMA_VERSION } from './schemaVersion.ts'
@@ -228,6 +229,16 @@ export const consentChangeSchema = z.strictObject({
   created_at_device: timestampSchema,
 })
 
+export const reportAckSchema = z.strictObject({
+  id: uuidSchema,
+  report_id: uuidSchema,
+  mission_id: uuidSchema,
+  ack_type: z.enum(REPORT_ACK_TYPES),
+  message_id: uuidSchema.nullable(),
+  recorded_at: timestampSchema,
+  created_at_device: timestampSchema,
+})
+
 export const operationTypeSchema = z.enum(OPERATION_TYPES)
 
 const operationSchemas = {
@@ -238,6 +249,7 @@ const operationSchemas = {
   profile_preferences: profilePreferencesSchema,
   consent_change: consentChangeSchema,
   care_order_response: careOrderResponsePayloadSchema,
+  report_ack: reportAckSchema,
 } as const
 
 export function parseOperationPayload(type: z.infer<typeof operationTypeSchema>, payload: unknown) {

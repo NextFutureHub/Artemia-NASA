@@ -19,6 +19,7 @@ type DeliveryClock = {
   postOperation: (body: unknown, token: string) => Promise<OperationResponse>
   pullChanges: (cursor: string, token: string) => Promise<OperationResponse>
   refreshSession: () => Promise<boolean>
+  refreshCareOrders?: (token: string) => Promise<void>
 }
 
 export async function runDelivery(input: DeliveryClock): Promise<void> {
@@ -49,15 +50,24 @@ export async function runDelivery(input: DeliveryClock): Promise<void> {
       await applyOutboxResult(input.database, input.scope, claimed, decision.patch)
     }
     await pullOwnChanges(input, token)
-    await refreshCareOrders(input, token)
+    try {
+      if (input.refreshCareOrders) await input.refreshCareOrders(token)
+      else await defaultRefreshCareOrders(input, token)
+    } catch {
+      // Care-order refresh must not undo accepted outbox work or block the worker.
+    }
   })
 }
 
-async function refreshCareOrders(input: DeliveryClock, token: string): Promise<void> {
-  const response = await apiRequest('/care-orders', { token })
-  if (response.status !== 200) return
-  const cards = parseCareOrders(response.body)
-  await replaceCareOrders(input.database, input.scope, cards)
+async function defaultRefreshCareOrders(input: DeliveryClock, token: string): Promise<void> {
+  try {
+    const response = await apiRequest('/care-orders', { token })
+    if (response.status !== 200) return
+    const cards = parseCareOrders(response.body)
+    await replaceCareOrders(input.database, input.scope, cards)
+  } catch {
+    // Care-order refresh must not block journal, reports, or message delivery.
+  }
 }
 
 export function browserDelivery(database: ArtemiaDb, scope: Scope, sessionUserId: string | null, token: string | null, manual: boolean): Promise<void> {

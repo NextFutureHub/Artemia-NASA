@@ -28,6 +28,7 @@ export function outboxEntityLabel(locale: Locale, entityType: OperationType | st
   if (entityType === 'report_bundle') return t(locale, 'entityReport')
   if (entityType === 'profile_preferences') return t(locale, 'entityPreferences')
   if (entityType === 'care_order_response') return t(locale, 'entityCareOrder')
+  if (entityType === 'report_ack') return t(locale, 'entityReportAck')
   if (entityType === 'consent_change' || entityType === 'invalidation') return t(locale, 'protectedPart')
   return t(locale, 'protectedPart')
 }

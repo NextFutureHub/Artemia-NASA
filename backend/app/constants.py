@@ -8,7 +8,9 @@ OPERATION_TYPES = (
     "profile_preferences",
     "consent_change",
     "care_order_response",
+    "report_ack",
 )
+REPORT_ACK_TYPES = ("device_received", "patient_read")
 CARE_ORDER_KINDS = (
     "examination",
     "measurement",

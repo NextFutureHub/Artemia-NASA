@@ -34,3 +34,5 @@ __pycache__/
 backend/.venv/
 tmp_canonical_probe.ts
 tmp_canonical_payload.json
+backups/
+

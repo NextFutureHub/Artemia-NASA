@@ -11,6 +11,7 @@ import {
   listPersonalRevisions,
   listReports,
   markMessageRead,
+  queueReportAck,
   readReport,
   readRevisions,
   requestRetry,
@@ -346,19 +347,38 @@ export function ReportViewPage() {
           sensitive: false,
           created_at: typeof item.created_at === 'string' ? item.created_at : new Date().toISOString(),
           read_at: null,
+          read_server_at: null,
         }]
       })
       await saveMessages(db, scope, incoming)
+      if (incoming.length > 0) {
+        await queueReportAck(db, scope, {
+          reportId: report.id,
+          missionId: report.mission_id,
+          ackType: 'device_received',
+          messageId: null,
+          recordedAt: new Date().toISOString(),
+          operationId: crypto.randomUUID(),
+        })
+      }
       setMessages(await listMessages(db, scope, report.id))
     })
   }, [report?.id, session.connection, session.token])
 
   if (!report) return <p>{t(locale, 'noReports')}</p>
+  const deviceReceivedAt = messages.some((item) => item.read_at || item.read_server_at) || report.doctor_work === 'replied'
+    ? report.replied_at
+    : null
+  const patientReadAt = messages.find((item) => item.read_server_at)?.read_server_at
+    ?? messages.find((item) => item.read_at)?.read_at
+    ?? null
   const steps = [
     { label: t(locale, 'savedStep'), done: true, at: report.created_at_device },
     { label: t(locale, 'serverStep'), done: report.delivery === 'accepted', at: report.accepted_at },
     { label: t(locale, 'openedStep'), done: report.doctor_work === 'opened' || report.doctor_work === 'replied', at: report.opened_at },
     { label: t(locale, 'replyStep'), done: report.doctor_work === 'replied', at: report.replied_at },
+    { label: t(locale, 'deviceReceived'), done: Boolean(deviceReceivedAt) || messages.length > 0, at: deviceReceivedAt },
+    { label: t(locale, 'patientReadStep'), done: Boolean(patientReadAt), at: patientReadAt },
   ]
   return (
     <article className="flex flex-col gap-4">
@@ -392,14 +412,17 @@ export function ReportViewPage() {
           {messages.map((message) => (
             <article key={message.id} className="rounded-xl border border-line p-3">
               <p className="whitespace-pre-wrap">{message.text}</p>
-              {message.read_at ? <p className="text-sm text-muted">{t(locale, 'readLocal')}</p> : (
+              {message.read_server_at ? <p className="text-sm text-muted">{t(locale, 'readServer')}</p> : null}
+              {message.read_at && !message.read_server_at ? <p className="text-sm text-muted">{t(locale, 'readLocal')}</p> : null}
+              {!message.read_at ? (
                 <Button type="button" variant="secondary" onClick={() => {
                   const readAt = new Date().toISOString()
-                  void markMessageRead(db, { ownerId: report.owner_id, environmentId }, message.id, readAt).then(() => {
+                  void markMessageRead(db, { ownerId: report.owner_id, environmentId }, message, report.mission_id, readAt, crypto.randomUUID()).then(() => {
                     setMessages((current) => current.map((item) => item.id === message.id ? { ...item, read_at: readAt } : item))
+                    void session.refreshLocal()
                   })
                 }}>{t(locale, 'markRead')}</Button>
-              )}
+              ) : null}
             </article>
           ))}
         </section>

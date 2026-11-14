@@ -100,6 +100,7 @@ export const copy = {
   entityReport: { ru: 'Отчёт', en: 'Report' },
   entityPreferences: { ru: 'Настройки профиля', en: 'Profile preferences' },
   entityCareOrder: { ru: 'Ответ по задаче врача', en: 'Care task response' },
+  entityReportAck: { ru: 'Подтверждение получения ответа', en: 'Reply acknowledgement' },
   careOrders: { ru: 'Задачи врача', en: 'Physician tasks' },
   careOrdersSubtitle: {
     ru: 'Поручения наблюдения и связи. Это не лекарственные назначения и не диагноз.',
@@ -390,7 +391,13 @@ export const copy = {
   printVersion: { ru: 'Печатная версия', en: 'Print version' },
   newerRevision: { ru: 'Есть более новая версия записи. Этот отчёт остаётся прежним.', en: 'A newer version of the record exists. This report stays as it was.' },
   markRead: { ru: 'Прочитано', en: 'Read' },
-  readLocal: { ru: 'Отмечено прочитанным на этом устройстве.', en: 'Marked read on this device.' },
+  readLocal: {
+    ru: 'Отмечено прочитанным на этом устройстве. Ожидает передачи на сервер.',
+    en: 'Marked read on this device. Waiting to reach the server.',
+  },
+  readServer: { ru: 'Прочтение подтверждено сервером.', en: 'Read receipt confirmed by the server.' },
+  deviceReceived: { ru: 'Ответ получен устройством', en: 'Reply received on device' },
+  patientReadStep: { ru: 'Прочитано пациентом', en: 'Read by patient' },
   retrySend: { ru: 'Повторить отправку', en: 'Retry sending' },
   newReports: { ru: 'Новые отчёты', en: 'New reports' },
   reviewCount: { ru: 'Запрошен просмотр', en: 'Review requested' },

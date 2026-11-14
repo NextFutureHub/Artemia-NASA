@@ -281,6 +281,7 @@ export type LocalMessage = {
   sensitive: boolean
   created_at: string
   read_at: string | null
+  read_server_at: string | null
 }
 
 export type LocalAudit = {

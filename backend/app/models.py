@@ -716,7 +716,7 @@ class SyncReceipt(Base):
         CheckConstraint(
             "operation_type in ("
             "'checkin_bundle', 'measurement', 'report_bundle', 'invalidation', "
-            "'profile_preferences', 'consent_change', 'care_order_response')",
+            "'profile_preferences', 'consent_change', 'care_order_response', 'report_ack')",
             name="operation_type_values",
         ),
         CheckConstraint("payload_hash ~ '^[0-9a-f]{64}$'", name="payload_hash_shape"),
