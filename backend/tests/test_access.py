@@ -90,6 +90,9 @@ def test_direct_api_bypass_does_not_create_a_record(client):
     posts = sorted(path for path, methods in schema["paths"].items() if "post" in methods)
     assert posts == [
         "/auth/login",
+        "/ground/crew/{subject_id}/orders",
+        "/ground/orders/{order_id}/cancel",
+        "/ground/orders/{order_id}/revise",
         "/missions/{mission_id}/reports/{report_id}/messages",
         "/missions/{mission_id}/reports/{report_id}/opened",
         "/operations",

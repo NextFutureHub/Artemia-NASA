@@ -13,6 +13,8 @@ MIRA = UUID("10000000-0000-4000-8000-000000000001")
 ALEX = UUID("10000000-0000-4000-8000-000000000002")
 DOCTOR = UUID("10000000-0000-4000-8000-000000000003")
 STRANGER = UUID("10000000-0000-4000-8000-000000000004")
+COMMANDER = UUID("10000000-0000-4000-8000-000000000005")
+ADMIN = UUID("10000000-0000-4000-8000-000000000006")
 ASSIGNMENT_MIRA = UUID("10000000-0000-4000-8000-000000000021")
 ASSIGNMENT_ALEX = UUID("10000000-0000-4000-8000-000000000022")
 PASSWORD = "test-password"
@@ -22,6 +24,8 @@ PEOPLE = (
     (ALEX, "alex@demo.artemia.local", "Alex Example", "Alex-02", "astronaut"),
     (DOCTOR, "doctor@demo.artemia.local", "Flight Doctor", "Flight-Doc", "doctor"),
     (STRANGER, "stranger@demo.artemia.local", "Other Doctor", "Other-Doc", "doctor"),
+    (COMMANDER, "commander@demo.artemia.local", "Commander Example", "Commander-01", "commander"),
+    (ADMIN, "admin@demo.artemia.local", "Admin Example", "Admin-01", "admin"),
 )
 
 

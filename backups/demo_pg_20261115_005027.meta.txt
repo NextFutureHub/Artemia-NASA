@@ -1,0 +1,6 @@
+﻿alembic_before=20261114_0001
+accounts=3
+checkins=0
+reports=0
+git_head=616d9e8e5ad7cdce82d69bc17e19737437561e6b
+backup_file=backups/demo_pg_20261115_005027.dump

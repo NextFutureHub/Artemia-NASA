@@ -50,6 +50,7 @@
 - Приёмка. A01–A03, A06, A08, A43 закрыты 2026-11-14. A01: астронавт и врач получают разные роли и маршруты — `backend/tests/test_acceptance_a01_a02.py` и `src/domain/acceptanceRoutes.test.ts`. A02: без сессии `/preparation` → 401, без успешных проверок «Начать» не активируется, локальный профиль не появляется. A03: подготовленный профиль и миссия читаются после reopen IndexedDB; маршрут Today требует только локальный профиль. A06: два одновременных `commitCheckin` оставляют одну запись и одну ревизию. A08: шаг назад сохраняет значения черновика. A43: `clearOwner` при pending возвращает `{ ok: false, pending }` и не стирает журнал. Доказательство: `yarn test` — 61 passed; `cd backend; .\.venv\Scripts\python -m pytest -q tests/test_acceptance_a01_a02.py` — 2 passed.
 
 - Задачи врача (без препаратов). Типы: examination, measurement, recommendation, symptom_monitor, follow_up. Врач создаёт / меняет / отменяет на карточке экипажа; борт видит на Today и `/onboard/orders`, отмечает выполнение / пропуск / ознакомление. Доставка через `POST /operations` тип `care_order_response` и `GET /care-orders` после pull. Нет дозировок, диагнозов и автосрочности. Доказательство: миграция `20261115_0002`, `backend/tests/test_care_orders.py` — 1 passed; `yarn test` — 65 passed (в т.ч. `careOrder.test.ts`, `careOrders.test.ts`); карточка `CARE-TASKS-P0` в `/evidence`, 2026-11-15.
+- A49 API: командир и администратор получают 403 на checkin, personal, ground inbox/crew, create/list care orders; ответ `care_order_response` — forbidden; `/care-orders` пустой список без чужой медицины. UI `/command` и `/admin` не реализованы (этап 6 / P1). Доказательство: `backend/tests/test_a49_roles.py`, 2026-11-15.
 
 ## В работе
 
@@ -147,5 +148,5 @@ USB, симулятор с постоянной меткой «СИМУЛЯЦИ�
 | A46 | Разрыв USB в середине окна | не входит в P0 |
 | A47 | Плохой контакт | не входит в P0 |
 | A48 | Неизвестный протокол / плохие строки | не входит в P0 |
-| A49 | Командир/администратор запрашивает медицину | не входит в P0 |
+| A49 | Командир/администратор запрашивает медицину | API deny pass; UI /command и /admin — P1 |
 | A50 | PWA обновление в середине формы | не входит в P0 |
