@@ -1,7 +1,8 @@
 """Synthetic mission ORBIT-DEMO-01. Passwords come only from the environment and are never printed."""
 
+import sys
 from datetime import datetime, timedelta, timezone
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy.orm import Session
 
@@ -43,6 +44,11 @@ def main() -> None:
     start = _start_at(settings.seed_mission_start_at)
     session = SessionLocal()
     try:
+        if "--fresh" in sys.argv:
+            fresh_demo_dataset(session)
+            session.commit()
+            print("Fresh demo dataset assigned. Earlier rows stay. No receipt was written.", flush=True)
+            return
         seed_demo(
             session,
             emails={
@@ -84,6 +90,16 @@ def seed_demo(session: Session, *, emails: dict[str, str], passwords: dict[str, 
     _personal(session, ALEX_ID, False)
 
 
+def fresh_demo_dataset(session: Session) -> UUID:
+    """Point the mission at a new synthetic set. Previous rows and receipts stay."""
+    mission = session.get(Mission, MISSION_ID)
+    if mission is None:
+        raise SystemExit("ORBIT-DEMO-01 is not seeded")
+    fresh = uuid4()
+    mission.demo_dataset_id = fresh
+    return fresh
+
+
 def _start_at(raw: str) -> datetime:
     if raw == "":
         return datetime.now(timezone.utc) - timedelta(days=14)
@@ -116,7 +132,8 @@ def _mission(session: Session, start: datetime, end: datetime) -> None:
         return
     mission.start_at = start
     mission.end_at = end
-    mission.demo_dataset_id = DATASET_ID
+    if mission.demo_dataset_id is None:
+        mission.demo_dataset_id = DATASET_ID
 
 
 def _account(session: Session, user_id: UUID, email: str, password: str, display_name: str, callsign: str) -> None:

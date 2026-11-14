@@ -58,6 +58,7 @@ export function CheckinPage() {
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const [issues, setIssues] = useState<Array<{ path: string; message: string }>>([])
   const [saving, setSaving] = useState(false)
+  const saveLock = useRef(false)
   const [result, setResult] = useState<{ at: string; delivery: LocalDelivery; id: string } | null>(null)
   const [share, setShare] = useState(profile?.general_exchange ?? false)
   const [prompt, setPrompt] = useState<DraftRecord | null>(null)
@@ -162,13 +163,15 @@ export function CheckinPage() {
   }
 
   async function onSave() {
-    if (saving || !draft || !profile) return
+    if (saveLock.current || !draft || !profile) return
+    saveLock.current = true
     const now = new Date()
     const currentValues = form.getValues()
     const built = buildGeneralPayload(currentValues, timeZone, now)
     const personalBuilt = buildPersonalPayload(currentValues, profile.reproductive_enabled)
     const combined = [...built.issues, ...personalBuilt.issues]
     if (!built.payload || combined.length > 0) {
+      saveLock.current = false
       setIssues(combined)
       document.getElementById(combined[0]?.path ?? '')?.focus()
       return
@@ -210,6 +213,7 @@ export function CheckinPage() {
     } catch {
       setFailure(t(locale, 'saveDeviceFailed'))
     } finally {
+      saveLock.current = false
       setSaving(false)
     }
   }

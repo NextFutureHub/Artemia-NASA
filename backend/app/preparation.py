@@ -156,10 +156,17 @@ def _rules(session: Session) -> list[dict[str, object]]:
     ]
 
 
+def current_dataset_id(session: Session, mission_id: UUID) -> UUID | None:
+    mission = session.get(Mission, mission_id)
+    if mission is None:
+        return None
+    return mission.demo_dataset_id
+
+
 def _checkins(session: Session, subject_id: UUID, mission_id: UUID) -> list[dict[str, object]]:
     checkins = session.scalars(
         select(Checkin)
-        .where(Checkin.subject_id == subject_id, Checkin.mission_id == mission_id)
+        .where(Checkin.subject_id == subject_id, Checkin.mission_id == mission_id, *_dataset_filter(Checkin.demo_dataset_id, current_dataset_id(session, mission_id)))
         .order_by(Checkin.recorded_at.desc())
         .limit(100)
     ).all()
@@ -212,7 +219,11 @@ def _checkins(session: Session, subject_id: UUID, mission_id: UUID) -> list[dict
 def _measurements(session: Session, subject_id: UUID, mission_id: UUID) -> list[dict[str, object]]:
     rows = session.scalars(
         select(Measurement)
-        .where(Measurement.subject_id == subject_id, Measurement.mission_id == mission_id)
+        .where(
+            Measurement.subject_id == subject_id,
+            Measurement.mission_id == mission_id,
+            *_dataset_filter(Measurement.demo_dataset_id, current_dataset_id(session, mission_id)),
+        )
         .order_by(Measurement.recorded_at.desc())
         .limit(100)
     ).all()
@@ -234,6 +245,12 @@ def _measurements(session: Session, subject_id: UUID, mission_id: UUID) -> list[
         }
         for row in rows
     ]
+
+
+def _dataset_filter(column, dataset_id: UUID | None):
+    if dataset_id is None:
+        return []
+    return [column == dataset_id]
 
 
 def _iso(value: datetime | date) -> str:

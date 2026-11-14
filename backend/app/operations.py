@@ -27,6 +27,7 @@ from app.models import (
     Measurement,
     MedicalAssignment,
     MedicalProfile,
+    Mission,
     PersonalPreference,
     Profile,
     Report,
@@ -452,6 +453,7 @@ def _apply_report(session: Session, actor_id: UUID, payload: dict[str, Any]) -> 
     if personal_included:
         _check_personal(session, actor_id, mission_id, bundle["personal"], recipient_id)
     report_id = require_uuid(report["id"])
+    mission = session.get(Mission, mission_id)
     session.add(
         Report(
             id=report_id,
@@ -459,6 +461,7 @@ def _apply_report(session: Session, actor_id: UUID, payload: dict[str, Any]) -> 
             mission_id=mission_id,
             author_id=actor_id,
             recipient_assignment_id=recipient_id,
+            demo_dataset_id=None if mission is None else mission.demo_dataset_id,
             title=report["title"],
             range_start=_date(report["range_start"]),
             range_end=_date(report["range_end"]),

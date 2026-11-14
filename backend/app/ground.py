@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.access import can_read_general, can_read_personal
+from app.preparation import current_dataset_id
 from app.canonical import hash_payload_part
 from app.models import (
     AuditEvent,
@@ -33,7 +34,11 @@ def inbox(session: Session, doctor_id: UUID) -> dict[str, object] | None:
     if not active:
         return _empty_inbox()
     assignment_ids = [item.id for item in active]
-    reports = session.scalars(select(Report).where(Report.recipient_assignment_id.in_(assignment_ids))).all()
+    reports = [
+        report
+        for report in session.scalars(select(Report).where(Report.recipient_assignment_id.in_(assignment_ids))).all()
+        if _in_current_dataset(session, report.mission_id, report.demo_dataset_id)
+    ]
     profiles = {
         profile.id: profile
         for profile in session.scalars(select(Profile).where(Profile.id.in_([item.subject_id for item in reports] or [doctor_id]))).all()
@@ -258,12 +263,11 @@ def crew_card(session: Session, doctor_id: UUID, mission_id: UUID, subject_id: U
     profile = session.get(Profile, subject_id)
     if profile is None:
         return None
-    checkin = session.scalar(
-        select(Checkin)
-        .where(Checkin.subject_id == subject_id, Checkin.mission_id == mission_id)
-        .order_by(Checkin.recorded_at.desc())
-        .limit(1)
-    )
+    dataset = current_dataset_id(session, mission_id)
+    checkin_query = select(Checkin).where(Checkin.subject_id == subject_id, Checkin.mission_id == mission_id)
+    if dataset is not None:
+        checkin_query = checkin_query.where(Checkin.demo_dataset_id == dataset)
+    checkin = session.scalar(checkin_query.order_by(Checkin.recorded_at.desc()).limit(1))
     last = None
     if checkin is not None:
         revision = session.scalar(
@@ -285,6 +289,11 @@ def crew_card(session: Session, doctor_id: UUID, mission_id: UUID, subject_id: U
         "unsent_on_device": "unknown",
         "personal_allowed": can_read_personal(session, doctor_id, subject_id, mission_id),
     }
+
+
+def _in_current_dataset(session: Session, mission_id: UUID, dataset_id: UUID | None) -> bool:
+    current = current_dataset_id(session, mission_id)
+    return current is None or dataset_id == current
 
 
 def _assigned_report(session: Session, doctor_id: UUID, mission_id: UUID, report_id: UUID) -> Report:
