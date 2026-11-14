@@ -6,6 +6,7 @@ import { db } from '../../data/local/db.ts'
 import { countPreparedProfiles } from '../../data/local/journal.ts'
 import { storePreparation, type PreparationBundle } from '../../data/local/prepareStore.ts'
 import { apiRequest, environmentId } from '../../data/remote/client.ts'
+import { preparationCanStart } from '../../domain/acceptanceRoutes.ts'
 import { t } from '../../i18n/copy.ts'
 
 type CheckState = { id: string; label: string; status: 'pending' | 'ok' | 'failed'; detail?: string }
@@ -107,7 +108,7 @@ export function PreparePage() {
     }
   }
 
-  const ready = checks.length > 0 && checks.every((item) => item.status === 'ok') && !otherOwner
+  const ready = preparationCanStart(checks, otherOwner)
   const titles = [t(locale, 'stepProfile'), t(locale, 'stepJournal'), t(locale, 'stepDevice')]
 
   return (

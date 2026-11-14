@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSession } from '../../app/session.tsx'
 import { Button, Field } from '../../components/ui.tsx'
+import { postLoginPath } from '../../domain/acceptanceRoutes.ts'
 import { t } from '../../i18n/copy.ts'
 
 export function LoginPage() {
@@ -23,12 +24,12 @@ export function LoginPage() {
     const result = await session.login(email, password)
     setBusy(false)
     if (result.kind === 'doctor') {
-      navigate('/ground/inbox')
+      navigate(postLoginPath('doctor', false))
       return
     }
     if (result.kind === 'astronaut') {
       const profile = await session.refreshLocal()
-      navigate(profile && profile.owner_id === result.userId ? '/onboard/today' : '/prepare')
+      navigate(postLoginPath('astronaut', Boolean(profile && profile.owner_id === result.userId)))
       return
     }
     setError(result.kind === 'network' ? t(locale, 'signInNetwork') : t(locale, 'signInFailed'))
