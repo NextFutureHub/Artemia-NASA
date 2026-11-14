@@ -41,7 +41,7 @@ import {
   symptomLabels,
   t,
 } from '../../i18n/copy.ts'
-import type { DraftRecord, LocalMeasurement } from '../../data/local/types.ts'
+import type { DraftRecord, LocalDelivery, LocalMeasurement } from '../../data/local/types.ts'
 
 const STEPS: CheckinStep[] = ['general', 'symptoms', 'measurements', 'review']
 
@@ -56,7 +56,7 @@ export function CheckinPage() {
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const [issues, setIssues] = useState<Array<{ path: string; message: string }>>([])
   const [saving, setSaving] = useState(false)
-  const [result, setResult] = useState<{ at: string; delivery: 'local_only' | 'queued' | 'on_server'; id: string } | null>(null)
+  const [result, setResult] = useState<{ at: string; delivery: LocalDelivery; id: string } | null>(null)
   const [share, setShare] = useState(profile?.general_exchange ?? false)
   const [prompt, setPrompt] = useState<DraftRecord | null>(null)
   const [symptomPrompt, setSymptomPrompt] = useState<'no' | 'declined' | null>(null)

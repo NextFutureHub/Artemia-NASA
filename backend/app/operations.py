@@ -52,6 +52,10 @@ from app.validation import (
 )
 
 
+def deny(code: str) -> None:
+    raise ContractError("forbidden", code)
+
+
 def submit_operation(session: Session, actor_id: UUID, body: dict[str, Any]) -> OperationResult:
     try:
         result = _submit(session, actor_id, body)
@@ -151,7 +155,7 @@ def _apply_checkin(session: Session, actor_id: UUID, payload: dict[str, Any]) ->
     revision = bundle["revision"]
     mission_id = require_uuid(checkin["mission_id"])
     if not is_active_astronaut(session, actor_id, mission_id):
-        fail("not_mission_astronaut")
+        deny("not_mission_astronaut")
     checkin_id = require_uuid(checkin["id"])
     revision_id = require_uuid(revision["id"])
     root_id = require_uuid(checkin["root_id"])
@@ -161,7 +165,7 @@ def _apply_checkin(session: Session, actor_id: UUID, payload: dict[str, Any]) ->
     for measurement_id in measurement_ids:
         measurement = session.get(Measurement, measurement_id)
         if measurement is None or measurement.subject_id != actor_id or measurement.mission_id != mission_id:
-            fail("measurement_not_owned")
+            deny("measurement_not_owned")
     personal_id = _check_personal(session, actor_id, mission_id, bundle["personal"], recipient_id=None)
 
     existing = session.scalar(select(Checkin).where(Checkin.id == checkin_id).with_for_update())
@@ -189,7 +193,7 @@ def _apply_checkin(session: Session, actor_id: UUID, payload: dict[str, Any]) ->
         session.flush()
     else:
         if existing.subject_id != actor_id:
-            fail("checkin_not_owned")
+            deny("checkin_not_owned")
         if existing.root_id != root_id:
             fail("root_id")
         head = session.scalar(
@@ -268,14 +272,14 @@ def _check_personal(
         or consent.decision != "granted"
         or consent.assignment_id is None
     ):
-        fail("personal_consent")
+        deny("personal_consent")
     if recipient_id is not None and consent.assignment_id != recipient_id:
-        fail("personal_consent")
+        deny("personal_consent")
     if not assignment_is_active(session, consent.assignment_id, actor_id, mission_id):
-        fail("personal_consent")
+        deny("personal_consent")
     assignment = session.get(MedicalAssignment, consent.assignment_id)
     if assignment is None or not personal_consent_granted(session, actor_id, mission_id, assignment.doctor_id):
-        fail("personal_consent")
+        deny("personal_consent")
     return personal_id
 
 
@@ -283,7 +287,7 @@ def _apply_measurement(session: Session, actor_id: UUID, payload: dict[str, Any]
     body = validate_measurement(payload)
     mission_id = require_uuid(body["mission_id"])
     if not is_active_astronaut(session, actor_id, mission_id):
-        fail("not_mission_astronaut")
+        deny("not_mission_astronaut")
     measurement_id = require_uuid(body["id"])
     number = None if body["value"] is None else measurement_number(body["metric"], body["value"])
     session.add(
@@ -317,11 +321,11 @@ def _apply_invalidation(session: Session, actor_id: UUID, payload: dict[str, Any
     body = validate_invalidation(payload)
     mission_id = require_uuid(body["mission_id"])
     if not is_active_astronaut(session, actor_id, mission_id):
-        fail("not_mission_astronaut")
+        deny("not_mission_astronaut")
     target_id = require_uuid(body["target_id"])
     target = _owned_target(session, body["target_type"], target_id)
     if target is None or target.subject_id != actor_id or target.mission_id != mission_id:
-        fail("target_not_owned")
+        deny("target_not_owned")
     event_id = require_uuid(body["id"])
     session.add(
         InvalidationEvent(
@@ -389,12 +393,12 @@ def _apply_consent(session: Session, actor_id: UUID, payload: dict[str, Any]) ->
     body = validate_consent(payload)
     mission_id = require_uuid(body["mission_id"])
     if not is_active_astronaut(session, actor_id, mission_id):
-        fail("not_mission_astronaut")
+        deny("not_mission_astronaut")
     assignment_id = optional_uuid(body["assignment_id"], "assignment_id")
     if assignment_id is not None:
         assignment = session.get(MedicalAssignment, assignment_id)
         if assignment is None or assignment.patient_id != actor_id or assignment.mission_id != mission_id:
-            fail("assignment")
+            deny("assignment")
     supersedes_id = optional_uuid(body["supersedes_id"], "supersedes_id")
     if supersedes_id is not None:
         previous = session.get(ConsentEvent, supersedes_id)
@@ -425,10 +429,10 @@ def _apply_report(session: Session, actor_id: UUID, payload: dict[str, Any]) -> 
     snapshot = report["general_snapshot"]
     mission_id = require_uuid(report["mission_id"])
     if not is_active_astronaut(session, actor_id, mission_id):
-        fail("not_mission_astronaut")
+        deny("not_mission_astronaut")
     recipient_id = require_uuid(report["recipient_assignment_id"])
     if not assignment_is_active(session, recipient_id, actor_id, mission_id):
-        fail("recipient")
+        deny("recipient")
     parent_id = optional_uuid(report["parent_report_id"], "parent_report")
     if parent_id is not None:
         parent = session.get(Report, parent_id)
@@ -437,7 +441,7 @@ def _apply_report(session: Session, actor_id: UUID, payload: dict[str, Any]) -> 
     for revision_id in snapshot["revision_ids"]:
         revision = session.get(CheckinRevision, require_uuid(revision_id, "revision_id"))
         if revision is None or revision.subject_id != actor_id or revision.mission_id != mission_id:
-            fail("revision_not_owned")
+            deny("revision_not_owned")
     for item in snapshot["measurements"]:
         measurement = session.get(Measurement, require_uuid(item["measurement_id"], "snapshot_measurement"))
         if measurement is None or measurement.subject_id != actor_id or measurement.mission_id != mission_id:

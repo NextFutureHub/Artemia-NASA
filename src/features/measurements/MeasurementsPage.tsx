@@ -34,7 +34,7 @@ export function MeasurementsPage() {
   useEffect(() => {
     if (!profile) return
     void listMeasurements(db, { ownerId: profile.owner_id, environmentId }).then(setRows)
-  }, [profile?.owner_id])
+  }, [profile?.owner_id, session.pending])
 
   if (!profile) return null
   const serial = 'serial' in navigator
@@ -176,7 +176,7 @@ export function MeasurementsPage() {
                 {row.metric} {row.value ?? '—'} {row.unit}
               </p>
               <p className="text-sm text-muted">
-                {row.source} · {row.quality} · {row.delivery === 'on_server' ? t(locale, 'sourceServer') : row.delivery === 'queued' ? t(locale, 'waitingSend') : t(locale, 'storedLocally')}
+                {row.source} · {row.quality} · {row.delivery === 'accepted' ? t(locale, 'receivedByServer') : row.delivery === 'on_server' ? t(locale, 'sourceServer') : row.delivery === 'queued' ? t(locale, 'waitingSend') : t(locale, 'storedLocally')}
               </p>
             </li>
           ))}

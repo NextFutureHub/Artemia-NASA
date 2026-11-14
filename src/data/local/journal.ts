@@ -11,6 +11,7 @@ import type {
   LocalCheckin,
   LocalDelivery,
   LocalMeasurement,
+  LocalReceipt,
   LocalRevision,
   MissionCache,
   OutboxItem,
@@ -383,12 +384,18 @@ export async function listMeasurements(database: ArtemiaDb, scope: Scope): Promi
 
 export async function countPending(database: ArtemiaDb, scope: Scope): Promise<number> {
   const rows = await database.outbox.where('[owner_id+environment_id]').equals([scope.ownerId, scope.environmentId]).toArray()
-  return rows.filter((row) => row.state === 'pending' || row.state === 'retry_wait' || row.state === 'sending').length
+  return rows.filter((row) => row.state !== 'accepted').length
 }
 
 export async function listOutbox(database: ArtemiaDb, scope: Scope): Promise<OutboxItem[]> {
   const rows = await database.outbox.where('[owner_id+environment_id]').equals([scope.ownerId, scope.environmentId]).toArray()
   return rows.sort((left, right) => right.created_at.localeCompare(left.created_at))
+}
+
+export async function requestRetry(database: ArtemiaDb, scope: Scope, operationId: string): Promise<void> {
+  const row = await database.outbox.get(operationId)
+  if (!row || !sameOwner(row, scope) || row.state === 'accepted' || row.state === 'sending') return
+  await database.outbox.put({ ...row, state: 'pending', next_attempt_at: new Date().toISOString(), lease_until: null })
 }
 
 export async function listAudit(database: ArtemiaDb, scope: Scope): Promise<LocalAudit[]> {
@@ -435,6 +442,111 @@ export async function updateProfile(database: ArtemiaDb, profile: PreparedProfil
   const current = await database.preparedProfiles.get([profile.owner_id, profile.environment_id])
   if (current && current.owner_id !== profile.owner_id) return
   await database.preparedProfiles.put(profile)
+}
+
+export async function readReceiptForEntity(database: ArtemiaDb, scope: Scope, entityId: string): Promise<LocalReceipt | null> {
+  const rows = await database.receipts.where('[owner_id+environment_id]').equals([scope.ownerId, scope.environmentId]).toArray()
+  return rows.find((row) => row.entity_id === entityId) ?? null
+}
+
+const LEASE_MS = 30_000
+const OPEN_STATES = new Set(['pending', 'retry_wait'])
+
+export async function claimNextOutbox(
+  database: ArtemiaDb,
+  scope: Scope,
+  nowIso: string,
+  options: { manual: boolean; sessionMatches: boolean; skip: string[] },
+): Promise<OutboxItem | null> {
+  const now = Date.parse(nowIso)
+  return database.transaction('rw', database.outbox, async () => {
+    const rows = await database.outbox.where('[owner_id+environment_id]').equals([scope.ownerId, scope.environmentId]).toArray()
+    for (const row of rows) {
+      if (row.state === 'sending' && row.lease_until !== null && Date.parse(row.lease_until) <= now) {
+        await database.outbox.put({ ...row, state: 'pending', lease_until: null })
+      }
+      if (options.manual && options.sessionMatches && row.state === 'blocked_auth') {
+        await database.outbox.put({ ...row, state: 'pending', last_error_code: null, next_attempt_at: nowIso })
+      }
+    }
+    const fresh = await database.outbox.where('[owner_id+environment_id]').equals([scope.ownerId, scope.environmentId]).toArray()
+    const accepted = new Set(fresh.filter((row) => row.state === 'accepted').map((row) => row.operation_id))
+    const ready = fresh
+      .filter((row) => OPEN_STATES.has(row.state))
+      .filter((row) => !options.skip.includes(row.operation_id))
+      .filter((row) => options.manual || row.state !== 'retry_wait' || Date.parse(row.next_attempt_at) <= now)
+      .filter((row) => options.manual || Date.parse(row.next_attempt_at) <= now)
+      .filter((row) => row.dependencies.every((id) => accepted.has(id)))
+      .sort((left, right) => left.created_at.localeCompare(right.created_at))
+    const next = ready[0]
+    if (!next) return null
+    const claimed: OutboxItem = {
+      ...next,
+      state: 'sending',
+      lease_until: new Date(now + LEASE_MS).toISOString(),
+    }
+    await database.outbox.put(claimed)
+    return claimed
+  })
+}
+
+export async function applyOutboxResult(
+  database: ArtemiaDb,
+  scope: Scope,
+  claimed: OutboxItem,
+  patch: {
+    state: OutboxItem['state']
+    attempts: number
+    nextAttemptAt: string
+    errorCode: string | null
+    serverReceiptId: string | null
+  },
+): Promise<'applied' | 'stale'> {
+  return database.transaction('rw', [database.outbox, database.receipts, database.localCheckins, database.localMeasurements, database.localAudit], async () => {
+    const current = await database.outbox.get(claimed.operation_id)
+    if (!current || !sameOwner(current, scope) || current.lease_until !== claimed.lease_until) return 'stale'
+    await database.outbox.put({
+      ...current,
+      state: patch.state,
+      attempts: patch.attempts,
+      next_attempt_at: patch.nextAttemptAt,
+      last_error_code: patch.errorCode,
+      lease_until: null,
+    })
+    if (patch.state !== 'accepted' || patch.serverReceiptId === null) return 'applied'
+    const receipt = await database.receipts.get(claimed.operation_id)
+    if (!receipt || !sameOwner(receipt, scope)) return 'applied'
+    await database.receipts.put({ ...receipt, server_receipt_id: patch.serverReceiptId })
+    if (claimed.entity_type === 'checkin_bundle') {
+      const checkin = await database.localCheckins.get(claimed.entity_id)
+      if (checkin && sameOwner(checkin, scope)) await database.localCheckins.put({ ...checkin, delivery: 'accepted' })
+    }
+    if (claimed.entity_type === 'measurement') {
+      const measurement = await database.localMeasurements.get(claimed.entity_id)
+      if (measurement && sameOwner(measurement, scope)) await database.localMeasurements.put({ ...measurement, delivery: 'accepted' })
+    }
+    await writeAudit(database, scope, 'server_receipt', claimed.operation_id, claimed.entity_id, patch.nextAttemptAt)
+    return 'applied'
+  })
+}
+
+export async function readSyncCursor(database: ArtemiaDb, scope: Scope): Promise<string> {
+  const row = await database.syncCursors.get(cursorId(scope))
+  if (!row || !sameOwner(row, scope)) return '0'
+  return row.scope
+}
+
+export async function commitSyncCursor(database: ArtemiaDb, scope: Scope, cursor: string, eventIds: string[], recordedAt: string): Promise<void> {
+  await database.transaction('rw', [database.syncCursors, database.localAudit], async () => {
+    await database.syncCursors.put({ id: cursorId(scope), owner_id: scope.ownerId, environment_id: scope.environmentId, scope: cursor })
+    for (const eventId of eventIds) {
+      await writeAudit(database, scope, 'pull_seen', null, eventId, recordedAt)
+    }
+  })
+}
+
+function cursorId(scope: Scope): string {
+  return `${scope.ownerId}:${scope.environmentId}`
 }
 
 async function enqueueMeasurement(database: ArtemiaDb, scope: Scope, measurement: LocalMeasurement, savedAt: string): Promise<void> {

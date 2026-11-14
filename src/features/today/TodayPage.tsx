@@ -35,7 +35,7 @@ export function TodayPage() {
     void readActiveDraft(db, scope).then(setDraft)
     void hiddenObservationIds(db, scope).then(setHidden)
     void listAudit(db, scope).then((rows) => setEvents(rows.slice(0, 5)))
-  }, [profile?.owner_id])
+  }, [profile?.owner_id, session.pending])
 
   const today = profile ? localDateInZone(openedAt, profile.timezone) : ''
   const completed = checkins.find((item) => item.local_date === today && !item.invalidated)

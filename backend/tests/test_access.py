@@ -140,7 +140,7 @@ def test_foreign_measurement_is_rejected_without_a_link(client):
     stolen = checkin_bundle(CHECKIN_ID, REVISION_ID)
     stolen["measurement_ids"] = [str(measurement_id)]
     rejected = _post(client, mira, "checkin_bundle", stolen, UUID("10000000-0000-4000-8000-000000000105"))
-    assert rejected.status_code == 422
+    assert rejected.status_code == 403
     assert rejected.json()["error_code"] == "measurement_not_owned"
     assert count_rows(CheckinMeasurement) == 0
     assert count_rows(Checkin) == 0
@@ -197,7 +197,7 @@ def test_personal_part_requires_consent_and_stays_separate(client):
         "consent_event_id": str(consent_id),
     }
     blocked = _post(client, mira, "checkin_bundle", early, UUID("10000000-0000-4000-8000-000000000108"))
-    assert blocked.status_code == 422
+    assert blocked.status_code == 403
     assert blocked.json()["error_code"] == "personal_consent"
     assert count_rows(Checkin) == 0
 

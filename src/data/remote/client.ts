@@ -1,7 +1,8 @@
-export const environmentId = import.meta.env.VITE_ENVIRONMENT || 'demo'
-export const apiUrl = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '')
+const meta = import.meta as { env?: { VITE_ENVIRONMENT?: string; VITE_API_URL?: string } }
+export const environmentId = meta.env?.VITE_ENVIRONMENT || 'demo'
+export const apiUrl = (meta.env?.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '')
 
-export type ApiResult = { ok: boolean; status: number; body: unknown }
+export type ApiResult = { ok: boolean; status: number; body: unknown; retryAfterSeconds: number | null }
 
 export async function apiRequest(path: string, options: { method?: string; token?: string; body?: unknown } = {}): Promise<ApiResult> {
   const headers = new Headers()
@@ -23,8 +24,10 @@ export async function apiRequest(path: string, options: { method?: string; token
         body = null
       }
     }
-    return { ok: response.ok, status: response.status, body }
+    const retryAfter = response.headers.get('retry-after')
+    const retryAfterSeconds = retryAfter !== null && /^\d+$/.test(retryAfter) ? Number(retryAfter) : null
+    return { ok: response.ok, status: response.status, body, retryAfterSeconds }
   } catch {
-    return { ok: false, status: 0, body: null }
+    return { ok: false, status: 0, body: null, retryAfterSeconds: null }
   }
 }

@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { missionDay } from '../../domain/clock.ts'
 import { db } from '../../data/local/db.ts'
 import { clearOwner } from '../../data/local/journal.ts'
 import { environmentId } from '../../data/remote/client.ts'
+import { browserDelivery } from '../../services/delivery.ts'
 import { t } from '../../i18n/copy.ts'
 import { useSession } from '../../app/session.tsx'
 import { AppDialog, Button } from '../../components/ui.tsx'
@@ -27,6 +28,27 @@ export function OnboardShell() {
     offline: t(locale, 'serverDown'),
     auth_required: t(locale, 'authRequired'),
   }[session.connection]
+
+  useEffect(() => {
+    const profile = session.profile
+    if (!profile || !session.token || session.userId !== profile.owner_id) return
+    let stop = false
+    const run = () => {
+      if (stop) return
+      void browserDelivery(db, { ownerId: profile.owner_id, environmentId }, session.userId, session.token, false).finally(() => {
+        void session.refreshLocal()
+      })
+    }
+    const kick = window.setTimeout(run, 0)
+    const timer = window.setInterval(run, 15_000)
+    window.addEventListener('focus', run)
+    return () => {
+      stop = true
+      window.clearTimeout(kick)
+      window.clearInterval(timer)
+      window.removeEventListener('focus', run)
+    }
+  }, [session.profile?.owner_id, session.token, session.userId])
 
   return (
     <div className="min-h-screen md:grid md:grid-cols-[232px_1fr]">

@@ -1,7 +1,7 @@
 import json
 from uuid import UUID, uuid4
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import or_, select
@@ -12,7 +12,7 @@ from app.access import can_read_general, can_read_personal
 from app.config import get_settings
 from app.constants import MAX_BODY_BYTES
 from app.db import get_db
-from app.errors import http_status_for
+from app.errors import ContractError, http_status_for
 from app.models import (
     Account,
     Checkin,
@@ -24,6 +24,7 @@ from app.models import (
 )
 from app.operations import submit_operation
 from app.preparation import preparation_bundle
+from app.pull import pull_updates
 from app.request_context import request_id_var
 from app.security import create_token, current_user, verify_password
 
@@ -104,6 +105,19 @@ def preparation(account: Account = Depends(current_user), session: Session = Dep
     if bundle is None:
         raise HTTPException(status_code=403, detail="forbidden")
     return bundle
+
+
+@app.get("/pull")
+def pull(
+    account: Account = Depends(current_user),
+    session: Session = Depends(get_db),
+    cursor: str | None = None,
+    limit: int = Query(default=100),
+) -> dict[str, object]:
+    try:
+        return pull_updates(session, str(account.id), cursor, limit)
+    except ContractError as error:
+        raise HTTPException(status_code=http_status_for(error.status), detail=error.code) from error
 
 
 @app.post("/operations")

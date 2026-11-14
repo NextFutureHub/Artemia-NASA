@@ -10,7 +10,7 @@ import type {
 
 export type Scope = { ownerId: string; environmentId: string }
 
-export type LocalDelivery = 'local_only' | 'queued' | 'on_server'
+export type LocalDelivery = 'local_only' | 'queued' | 'on_server' | 'accepted'
 
 export type PreparedProfile = {
   owner_id: string

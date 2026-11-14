@@ -70,7 +70,7 @@ def test_preferences_invalidation_and_report_use_the_allowlist(client):
         },
         uuid4(),
     )
-    assert stolen.status_code == 422
+    assert stolen.status_code == 403
     assert stolen.json()["error_code"] == "not_mission_astronaut"
     assert count_rows(InvalidationEvent) == 1
 

@@ -36,4 +36,6 @@ def http_status_for(status: str) -> int:
         return 200
     if status == "conflict":
         return 409
+    if status == "forbidden":
+        return 403
     return 422
