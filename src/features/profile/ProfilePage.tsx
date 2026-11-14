@@ -1,0 +1,113 @@
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useSession } from '../../app/session.tsx'
+import { Banner, Button, Field } from '../../components/ui.tsx'
+import { db } from '../../data/local/db.ts'
+import { clearOwner, updateProfile } from '../../data/local/journal.ts'
+import { environmentId } from '../../data/remote/client.ts'
+import { formatZoned } from '../../domain/clock.ts'
+import { t } from '../../i18n/copy.ts'
+
+export function ProfilePage() {
+  const session = useSession()
+  const navigate = useNavigate()
+  const locale = session.locale
+  const profile = session.profile
+  const [reminder, setReminder] = useState(profile?.reminder_enabled ?? false)
+  const [reminderTime, setReminderTime] = useState(profile?.reminder_time ?? '08:00')
+  const [personal, setPersonal] = useState(profile?.reproductive_enabled ?? false)
+  const [exchange, setExchange] = useState(profile?.general_exchange ?? false)
+  const [sensitive, setSensitive] = useState(profile?.sensitive_sharing ?? 'device_only')
+  const [message, setMessage] = useState('')
+  const [phrase, setPhrase] = useState('')
+
+  if (!profile || !session.mission) return null
+  const current = profile
+  const mission = session.mission
+
+  async function save() {
+    const next = {
+      ...current,
+      locale,
+      reminder_enabled: reminder,
+      reminder_time: reminder ? reminderTime : null,
+      reproductive_enabled: personal,
+      general_exchange: exchange,
+      sensitive_sharing: sensitive,
+    }
+    await updateProfile(db, next)
+    await session.refreshLocal()
+    setMessage(t(locale, 'settingsSaved'))
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <h1 className="text-3xl">{t(locale, 'profile')}</h1>
+      <section className="rounded-xl border border-line p-4">
+        <h2>{t(locale, 'basic')}</h2>
+        <p>{current.callsign}</p>
+        <p>{current.display_name}</p>
+        <p>{mission.name}</p>
+        <p className="numeric text-sm text-muted">
+          {formatZoned(new Date(mission.start_at), 'UTC', locale === 'ru' ? 'ru' : 'en')} — {formatZoned(new Date(mission.end_at), 'UTC', locale === 'ru' ? 'ru' : 'en')}
+        </p>
+        <p>{session.assignment?.doctor_callsign ?? t(locale, 'noPhysician')}</p>
+        <p className="text-sm text-muted">{t(locale, 'readOnly')}</p>
+      </section>
+      <section className="flex flex-col gap-3 rounded-xl border border-line p-4">
+        <h2>{t(locale, 'journalSettings')}</h2>
+        <p>{current.timezone}</p>
+        <label className="flex min-h-11 items-center gap-2">
+          <input type="checkbox" checked={reminder} onChange={(event) => setReminder(event.target.checked)} />
+          {t(locale, 'reminder')}
+        </label>
+        <input type="time" value={reminderTime} onChange={(event) => setReminderTime(event.target.value)} className="min-h-11 rounded-xl border border-line bg-canvas px-3" />
+        <p className="text-sm text-muted">{t(locale, 'reminderHint')}</p>
+      </section>
+      <section className="flex flex-col gap-3 rounded-xl border border-line p-4">
+        <h2>{t(locale, 'privacy')}</h2>
+        <label className="flex min-h-11 items-center gap-2">
+          <input type="checkbox" checked={personal} onChange={(event) => setPersonal(event.target.checked)} />
+          {t(locale, 'personalToggle')}
+        </label>
+        <p className="text-sm text-muted">{t(locale, 'personalHint')}</p>
+        <label className="flex min-h-11 items-center gap-2">
+          <input type="radio" checked={sensitive === 'device_only'} onChange={() => setSensitive('device_only')} />
+          {t(locale, 'deviceOnly')}
+        </label>
+        <label className="flex min-h-11 items-center gap-2">
+          <input type="radio" checked={sensitive === 'assigned_doctor'} onChange={() => setSensitive('assigned_doctor')} />
+          {t(locale, 'assignedDoctor')}
+        </label>
+        <label className="flex min-h-11 items-center gap-2">
+          <input type="checkbox" checked={exchange} onChange={(event) => setExchange(event.target.checked)} />
+          {t(locale, 'exchange')}
+        </label>
+        <Button onClick={() => void save()}>{t(locale, 'saveSettings')}</Button>
+        {message ? <Banner tone="neutral">{message}</Banner> : null}
+      </section>
+      <section className="flex flex-col gap-3 rounded-xl border border-line p-4">
+        <h2>{t(locale, 'deviceSection')}</h2>
+        <p className="numeric text-sm">{current.device_id}</p>
+        {session.pending > 0 ? <Banner tone="attention">{t(locale, 'clearBlocked', { count: session.pending })}</Banner> : null}
+        <Field id="clear-phrase" label={t(locale, 'clearPhrase')}>
+          <input id="clear-phrase" value={phrase} onChange={(event) => setPhrase(event.target.value)} className="min-h-11 rounded-xl border border-line bg-canvas px-3" />
+        </Field>
+        <Button
+          variant="danger"
+          disabled={session.pending > 0 || phrase !== 'ОЧИСТИТЬ'}
+          onClick={() => {
+            void clearOwner(db, { ownerId: current.owner_id, environmentId }).then(async (result) => {
+              if (!result.ok) return
+              session.logout()
+              await session.refreshLocal()
+              navigate('/login')
+            })
+          }}
+        >
+          {t(locale, 'clearAction')}
+        </Button>
+      </section>
+    </div>
+  )
+}

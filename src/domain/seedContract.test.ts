@@ -18,6 +18,6 @@ test('demo seed and env example do not contain passwords', () => {
   assert.match(example, /^SEED_ALEX_PASSWORD=$/m)
   assert.match(example, /^SEED_FLIGHT_DOC_PASSWORD=$/m)
   assert.doesNotMatch(example, /SUPABASE/)
-  assert.doesNotMatch(example, /VITE_/)
+  assert.doesNotMatch(example, /VITE_(?!API_URL|ENVIRONMENT)/)
   assert.doesNotMatch(example, /service_role/i)
 })

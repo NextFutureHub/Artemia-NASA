@@ -4,7 +4,8 @@ from uuid import UUID, uuid4
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy import select
+from sqlalchemy import or_, select
+from sqlalchemy.sql import func
 from sqlalchemy.orm import Session
 
 from app.access import can_read_general, can_read_personal
@@ -12,8 +13,17 @@ from app.config import get_settings
 from app.constants import MAX_BODY_BYTES
 from app.db import get_db
 from app.errors import http_status_for
-from app.models import Account, Checkin, CheckinPersonalRevision, CheckinRevision, Measurement, Profile
+from app.models import (
+    Account,
+    Checkin,
+    CheckinPersonalRevision,
+    CheckinRevision,
+    Measurement,
+    MissionMembership,
+    Profile,
+)
 from app.operations import submit_operation
+from app.preparation import preparation_bundle
 from app.request_context import request_id_var
 from app.security import create_token, current_user, verify_password
 
@@ -68,13 +78,32 @@ def me(account: Account = Depends(current_user), session: Session = Depends(get_
     profile = session.get(Profile, account.id)
     if profile is None:
         raise HTTPException(status_code=404, detail="not_found")
+    membership = session.scalar(
+        select(MissionMembership)
+        .where(
+            MissionMembership.user_id == account.id,
+            MissionMembership.active_from <= func.now(),
+            or_(MissionMembership.active_until.is_(None), MissionMembership.active_until > func.now()),
+        )
+        .order_by(MissionMembership.active_from.desc())
+    )
     return {
         "id": str(profile.id),
         "display_name": profile.display_name,
         "callsign": profile.callsign,
         "locale": profile.locale,
         "timezone": profile.timezone,
+        "role": None if membership is None else membership.role,
+        "mission_id": None if membership is None else str(membership.mission_id),
     }
+
+
+@app.get("/preparation")
+def preparation(account: Account = Depends(current_user), session: Session = Depends(get_db)) -> dict[str, object]:
+    bundle = preparation_bundle(session, account.id)
+    if bundle is None:
+        raise HTTPException(status_code=403, detail="forbidden")
+    return bundle
 
 
 @app.post("/operations")
