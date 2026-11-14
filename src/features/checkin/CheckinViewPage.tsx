@@ -6,6 +6,7 @@ import { formatZoned } from '../../domain/clock.ts'
 import { db } from '../../data/local/db.ts'
 import { readCheckin, readPersonalRevision, readReceiptForEntity, readRevisions } from '../../data/local/journal.ts'
 import { environmentId } from '../../data/remote/client.ts'
+import { displayComment } from '../../domain/explanations.ts'
 import { label, overallLabels, t } from '../../i18n/copy.ts'
 import type { LocalCheckin, LocalPersonalRevision, LocalRevision } from '../../data/local/types.ts'
 
@@ -46,6 +47,7 @@ export function CheckinViewPage() {
         {formatZoned(new Date(checkin.recorded_at), checkin.timezone, locale === 'ru' ? 'ru' : 'en')} · {t(locale, 'versions')} {latest?.revision_no ?? 1}
       </p>
       <p>{latest ? label(locale, overallLabels[latest.general_payload.overall_state]) : null}</p>
+      {latest?.general_payload.comment ? <p>{displayComment(latest.general_payload.comment)}</p> : null}
       <p>
         {receiptId
           ? t(locale, 'receivedByServer')

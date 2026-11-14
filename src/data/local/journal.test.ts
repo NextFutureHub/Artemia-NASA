@@ -86,6 +86,25 @@ test('two overlapping creates keep a single active draft', async () => {
   await database.delete()
 })
 
+test('a closed database does not report the record as saved', async () => {
+  const database = new ArtemiaDb(`artemia-journal-${crypto.randomUUID()}`)
+  await seedProfile(database)
+  const draft = draftRecord()
+  const general = buildGeneralPayload(draft.values, 'UTC', new Date('2026-11-14T12:00:00.000Z')).payload
+  assert.ok(general)
+  await saveDraft(database, draft)
+  database.close()
+  await assert.rejects(() =>
+    commitCheckin(database, { ownerId: OWNER, environmentId: ENV }, draft.id, draft.operation_id ?? '', general, false, {
+      recordedAt: '2026-11-14T11:00:00.000Z',
+      localDate: '2026-11-14',
+    }),
+  )
+  const opened = new ArtemiaDb(database.name)
+  assert.equal((await listCheckins(opened, { ownerId: OWNER, environmentId: ENV })).length, 0)
+  opened.close()
+})
+
 async function seedProfile(database: ArtemiaDb): Promise<void> {
   const profile: PreparedProfile = {
     owner_id: OWNER,

@@ -54,7 +54,7 @@ export function OnboardShell() {
     <div className="min-h-screen md:grid md:grid-cols-[232px_1fr]">
       <aside className={`${open ? 'flex' : 'hidden'} min-h-screen flex-col border-r border-line bg-surface p-4 md:flex`}>
         <p className="text-xl">{t(locale, 'appName')}</p>
-        <nav className="mt-6 flex flex-1 flex-col gap-1" aria-label={t(locale, 'menu')}>
+        <nav id="board-menu" className="mt-6 flex flex-1 flex-col gap-1" aria-label={t(locale, 'menu')}>
           <ShellLink to="/onboard/today" label={t(locale, 'today')} onNavigate={() => setOpen(false)} />
           <ShellLink to="/onboard/measurements" label={t(locale, 'measurements')} onNavigate={() => setOpen(false)} />
           <ShellLink to="/onboard/history" label={t(locale, 'history')} onNavigate={() => setOpen(false)} />
@@ -74,7 +74,7 @@ export function OnboardShell() {
       </aside>
       <div className="min-w-0">
         <header className="flex h-16 items-center gap-3 border-b border-line px-4">
-          <Button variant="quiet" className="md:hidden" onClick={() => setOpen((value) => !value)}>
+          <Button variant="quiet" className="md:hidden" aria-expanded={open} aria-controls="board-menu" onClick={() => setOpen((value) => !value)}>
             {t(locale, 'menu')}
           </Button>
           <div className="min-w-0 flex-1">

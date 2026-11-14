@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useSession } from '../../app/session.tsx'
 import { AppDialog, Button, Card } from '../../components/ui.tsx'
 import { formatZoned, localDateInZone } from '../../domain/clock.ts'
+import { explanationCard, type RuleId } from '../../domain/explanations.ts'
 import type { GeneralPayload } from '../../domain/generalPayload.ts'
 import { db } from '../../data/local/db.ts'
 import { hiddenObservationIds, hideObservation, listAudit, listCheckins, listMeasurements, readActiveDraft, readRevisions } from '../../data/local/journal.ts'
@@ -46,11 +47,13 @@ export function TodayPage() {
     })
   }, [profile?.owner_id, completed?.id])
 
+  const whyCard = why && isRuleId(why) ? explanationCard(why, [{ label: completed?.id ?? '', href: completed ? `/onboard/checkin/${completed.id}` : null }], openedAt.toISOString()) : null
   if (!profile) return null
   const latest = measurements[0]
   const stale = latest ? openedAt.getTime() - new Date(latest.recorded_at).getTime() > STALE_MS : false
   const attached = measurements.some((item) => item.recorded_at.slice(0, 10) === today)
-  const hints = buildHints(payload, attached, hidden, completed?.id)
+  const failedMeasurement = measurements.some((item) => item.quality === 'invalid' || item.quality === 'insufficient')
+  const hints = buildHints(payload, attached, hidden, completed?.id, session.connection === 'auth_required', failedMeasurement)
   const procedureText = session.mission?.emergency_contact_text.trim() ?? ''
 
   return (
@@ -157,7 +160,14 @@ export function TodayPage() {
         </Button>
       </AppDialog>
       <AppDialog open={why !== null} onOpenChange={() => setWhy(null)} title={t(locale, 'why')} description={t(locale, 'prototypeRule')}>
-        <p className="w-full text-sm text-muted">{why}</p>
+        {whyCard ? (
+          <div className="flex w-full flex-col gap-2 text-sm">
+            <p>{t(locale, 'ruleVersion', { version: whyCard.version })}</p>
+            <p>{t(locale, 'ruleInputs')}: {whyCard.inputs.map((item) => item.label).join(', ') || t(locale, 'noEvents')}</p>
+            <p className="numeric">{t(locale, 'computedAt', { time: whyCard.computedAt })}</p>
+            <p>{why === 'HISTORY_CHANGE_V1' ? t(locale, 'historyChangeLimit') : t(locale, 'prototypeRule')}</p>
+          </div>
+        ) : null}
         <Button variant="quiet" onClick={() => setWhy(null)}>
           {t(locale, 'close')}
         </Button>
@@ -166,12 +176,24 @@ export function TodayPage() {
   )
 }
 
-function buildHints(payload: GeneralPayload | null, hasMeasurement: boolean, hidden: Set<string>, checkinId: string | undefined) {
-  if (!payload || !checkinId) return []
-  const hints: Array<{ id: string; title: 'noCurrentTitle' | 'reviewTitle'; body: 'noCurrentBody' | 'reviewBody'; rule: string }> = []
-  if (!hasMeasurement) hints.push({ id: 'measure', title: 'noCurrentTitle', body: 'noCurrentBody', rule: 'DATA_NO_CURRENT_V1' })
-  if (payload.review_requested) hints.push({ id: 'review', title: 'reviewTitle', body: 'reviewBody', rule: 'SELF_REVIEW_REQUEST_V1' })
-  return hints.filter((hint) => !hidden.has(`${hint.rule}:${checkinId}`)).slice(0, 3)
+function buildHints(
+  payload: GeneralPayload | null,
+  hasMeasurement: boolean,
+  hidden: Set<string>,
+  checkinId: string | undefined,
+  authBlocked: boolean,
+  failedMeasurement: boolean,
+) {
+  const hints: Array<{ id: string; title: 'noCurrentTitle' | 'reviewTitle' | 'contactLostTitle' | 'authRuleTitle'; body: 'noCurrentBody' | 'reviewBody' | 'contactLostBody' | 'authRuleBody'; rule: string }> = []
+  if (payload && checkinId && !hasMeasurement) hints.push({ id: 'measure', title: 'noCurrentTitle', body: 'noCurrentBody', rule: 'DATA_NO_CURRENT_V1' })
+  if (payload?.review_requested) hints.push({ id: 'review', title: 'reviewTitle', body: 'reviewBody', rule: 'SELF_REVIEW_REQUEST_V1' })
+  if (failedMeasurement) hints.push({ id: 'contact', title: 'contactLostTitle', body: 'contactLostBody', rule: 'DATA_CONTACT_LOST_V1' })
+  if (authBlocked) hints.push({ id: 'auth', title: 'authRuleTitle', body: 'authRuleBody', rule: 'SYNC_AUTH_REQUIRED_V1' })
+  return hints.filter((hint) => !checkinId || !hidden.has(`${hint.rule}:${checkinId}`)).slice(0, 3)
+}
+
+function isRuleId(value: string): value is RuleId {
+  return value === 'DATA_CONTACT_LOST_V1' || value === 'DATA_NO_CURRENT_V1' || value === 'SELF_REVIEW_REQUEST_V1' || value === 'SYNC_AUTH_REQUIRED_V1' || value === 'HISTORY_CHANGE_V1'
 }
 
 function elapsed(locale: 'ru' | 'en', iso: string): string {

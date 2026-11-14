@@ -3,11 +3,14 @@ import { Link } from 'react-router-dom'
 import { useSession } from '../../app/session.tsx'
 import { Button } from '../../components/ui.tsx'
 import { formatZoned, localDateInZone } from '../../domain/clock.ts'
+import { explanationCard } from '../../domain/explanations.ts'
+import { comparisonText, fatigueSeries, pulseSeries, sleepSeries } from '../../domain/trends.ts'
 import { db } from '../../data/local/db.ts'
 import { listCheckins, listMeasurements } from '../../data/local/journal.ts'
 import { environmentId } from '../../data/remote/client.ts'
 import { t } from '../../i18n/copy.ts'
-import type { LocalCheckin, LocalMeasurement } from '../../data/local/types.ts'
+import type { LocalCheckin, LocalMeasurement, LocalRevision } from '../../data/local/types.ts'
+import { TrendChart } from './TrendChart.tsx'
 
 type Kind = 'all' | 'checkin' | 'measurement'
 
@@ -16,6 +19,7 @@ export function HistoryPage() {
   const locale = session.locale
   const profile = session.profile
   const [checkins, setCheckins] = useState<LocalCheckin[]>([])
+  const [revisions, setRevisions] = useState<LocalRevision[]>([])
   const [measurements, setMeasurements] = useState<LocalMeasurement[]>([])
   const [range, setRange] = useState<'7' | '30' | 'all' | 'custom'>(profile?.mission_id && session.mission?.mode === 'short' ? '7' : '30')
   const [from, setFrom] = useState('')
@@ -30,6 +34,7 @@ export function HistoryPage() {
     const scope = { ownerId: profile.owner_id, environmentId }
     void listCheckins(db, scope).then(setCheckins)
     void listMeasurements(db, scope).then(setMeasurements)
+    void db.localCheckinRevisions.where('[owner_id+environment_id]').equals([profile.owner_id, environmentId]).toArray().then(setRevisions)
   }, [profile?.owner_id])
 
   if (!profile) return null
@@ -52,11 +57,72 @@ export function HistoryPage() {
     .filter((item) => kind === 'all' || item.kind === kind)
     .filter((item) => source === 'all' || item.source === source)
     .sort((left, right) => right.at.localeCompare(left.at))
+  const latestRevision = new Map<string, LocalRevision>()
+  for (const revision of revisions) {
+    const current = latestRevision.get(revision.checkin_id)
+    if (!current || revision.revision_no > current.revision_no) latestRevision.set(revision.checkin_id, revision)
+  }
+  const rangedCheckins = checkins.filter((item) => item.local_date >= start && item.local_date <= end)
+  const sleep = sleepSeries(rangedCheckins.map((item) => {
+    const payload = latestRevision.get(item.id)?.general_payload
+    return {
+      date: item.local_date,
+      recordedAt: item.recorded_at,
+      hours: payload?.sleep_hours ?? null,
+      status: payload?.sleep_answer_status ?? 'unknown',
+      invalidated: item.invalidated,
+      type: item.type,
+      href: `/onboard/checkin/${item.id}`,
+    }
+  }))
+  const fatigue = fatigueSeries(rangedCheckins.map((item) => {
+    const payload = latestRevision.get(item.id)?.general_payload
+    return {
+      date: item.local_date,
+      recordedAt: item.recorded_at,
+      score: payload?.fatigue_score ?? null,
+      status: payload?.fatigue_answer_status ?? 'unknown',
+      invalidated: item.invalidated,
+      href: `/onboard/checkin/${item.id}`,
+    }
+  }))
+  const pulse = pulseSeries(measurements.filter((item) => {
+    const date = localDateInZone(new Date(item.recorded_at), profile.timezone)
+    return date >= start && date <= end
+  }).map((item) => ({
+    recordedAt: item.recorded_at,
+    date: localDateInZone(new Date(item.recorded_at), profile.timezone),
+    value: item.value,
+    source: item.source,
+    quality: item.quality,
+    context: item.context,
+    href: '/onboard/measurements',
+  })))
+  const comparedSeries = [sleep, fatigue, pulse].find((item) => item.comparison.status === 'compared')
+  const compared = comparedSeries?.comparison ?? { status: 'insufficient' as const }
+  const historyCard = compared.status === 'compared' && comparedSeries
+    ? explanationCard('HISTORY_CHANGE_V1', [{ label: comparedSeries.metric, href: '/onboard/history' }], new Date().toISOString())
+    : null
 
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-3xl">{t(locale, 'history')}</h1>
-      <p className="text-sm text-muted">{t(locale, 'chartsLater')}</p>
+      <div className="grid gap-3 lg:grid-cols-3">
+        <TrendChart series={sleep} locale={locale} />
+        <TrendChart series={fatigue} locale={locale} />
+        <TrendChart series={pulse} locale={locale} />
+      </div>
+      {historyCard ? (
+        <article className="rounded-xl border border-line p-4">
+          <h2 className="text-xl">{t(locale, 'why')}</h2>
+          <p>{t(locale, 'prototypeRule')}</p>
+          <p className="text-sm text-muted">{t(locale, 'ruleVersion', { version: historyCard.version })}</p>
+          <p>{comparisonText(locale, compared)}</p>
+          <p className="text-sm">{t(locale, 'historyChangeLimit')}</p>
+          <p className="text-sm text-muted">{t(locale, 'ruleInputs')}: {historyCard.inputs.map((item) => item.label).join(', ')}</p>
+          <p className="numeric text-sm text-muted">{t(locale, 'computedAt', { time: historyCard.computedAt })}</p>
+        </article>
+      ) : null}
       <div className="flex flex-wrap gap-2">
         <Button variant={range === '7' ? 'primary' : 'quiet'} onClick={() => setRange('7')}>{t(locale, 'days7')}</Button>
         <Button variant={range === '30' ? 'primary' : 'quiet'} onClick={() => setRange('30')}>{t(locale, 'days30')}</Button>
