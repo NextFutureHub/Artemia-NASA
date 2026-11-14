@@ -23,4 +23,14 @@ dist-ssr
 *.sln
 *.sw?
 
-docs
+.env
+.env.*
+!.env.example
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+backend/.venv/
+tmp_canonical_probe.ts
+tmp_canonical_payload.json

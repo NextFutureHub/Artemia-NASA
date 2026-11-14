@@ -1,0 +1,43 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-artemia}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-artemia}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-artemia} -d ${POSTGRES_DB:-artemia}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - artemia_pg:/var/lib/postgresql/data
+
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+pg8000://${POSTGRES_USER:-artemia}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-artemia}
+      TOKEN_SECRET: ${TOKEN_SECRET:?TOKEN_SECRET is required}
+      SEED_MIRA_EMAIL: ${SEED_MIRA_EMAIL:-mira-01@demo.artemia.local}
+      SEED_MIRA_PASSWORD: ${SEED_MIRA_PASSWORD:?SEED_MIRA_PASSWORD is required}
+      SEED_ALEX_EMAIL: ${SEED_ALEX_EMAIL:-alex-02@demo.artemia.local}
+      SEED_ALEX_PASSWORD: ${SEED_ALEX_PASSWORD:?SEED_ALEX_PASSWORD is required}
+      SEED_FLIGHT_DOC_EMAIL: ${SEED_FLIGHT_DOC_EMAIL:-flight-doc@demo.artemia.local}
+      SEED_FLIGHT_DOC_PASSWORD: ${SEED_FLIGHT_DOC_PASSWORD:?SEED_FLIGHT_DOC_PASSWORD is required}
+      SEED_MISSION_START_AT: ${SEED_MISSION_START_AT:-}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+volumes:
+  artemia_pg:
