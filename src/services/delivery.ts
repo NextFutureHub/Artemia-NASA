@@ -1,4 +1,6 @@
+import { parseCareOrders } from '../domain/careOrder.ts'
 import { apiRequest } from '../data/remote/client.ts'
+import { replaceCareOrders } from '../data/local/careOrders.ts'
 import type { ArtemiaDb } from '../data/local/db.ts'
 import { applyOutboxResult, claimNextOutbox, commitSyncCursor, readSyncCursor } from '../data/local/journal.ts'
 import type { OutboxItem, Scope } from '../data/local/types.ts'
@@ -47,7 +49,15 @@ export async function runDelivery(input: DeliveryClock): Promise<void> {
       await applyOutboxResult(input.database, input.scope, claimed, decision.patch)
     }
     await pullOwnChanges(input, token)
+    await refreshCareOrders(input, token)
   })
+}
+
+async function refreshCareOrders(input: DeliveryClock, token: string): Promise<void> {
+  const response = await apiRequest('/care-orders', { token })
+  if (response.status !== 200) return
+  const cards = parseCareOrders(response.body)
+  await replaceCareOrders(input.database, input.scope, cards)
 }
 
 export function browserDelivery(database: ArtemiaDb, scope: Scope, sessionUserId: string | null, token: string | null, manual: boolean): Promise<void> {

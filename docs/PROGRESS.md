@@ -1,6 +1,6 @@
 # Журнал Artemia P0
 
-Обновлено: 2026-11-14.
+Обновлено: 2026-11-15.
 
 | Показатель | Значение |
 |---|---|
@@ -48,6 +48,8 @@
 - Этап 5. `/evidence` ищет по названию и фильтрует тип. Локальная выдержка остаётся на странице, внешняя ссылка при обрыве просит интернет. Доказательство: каталог `src/domain/evidenceCatalog.ts`. В браузере поиск «Roadmap» оставил две карточки NASA и текст, что правила прототипа не одобрены NASA.
 - Этап 5. На 390 px меню сворачивается, форма самочувствия остаётся в одной колонке, поля и кнопки доступны с клавиатуры. Контраст текста задан темой `#F4F7FB` / `#A8B7CA` на `#0B1220`. Сборка `yarn build` не содержит `service_role`. Комментарий показывается как текст. Закрытая база не отвечает «сохранено». Доказательство: `src/data/local/journal.test.ts`, `backend/tests/test_stage5.py`, `yarn test` — 50 passed, `pytest` — 28 passed, 2026-11-14.
 - Приёмка. A01–A03, A06, A08, A43 закрыты 2026-11-14. A01: астронавт и врач получают разные роли и маршруты — `backend/tests/test_acceptance_a01_a02.py` и `src/domain/acceptanceRoutes.test.ts`. A02: без сессии `/preparation` → 401, без успешных проверок «Начать» не активируется, локальный профиль не появляется. A03: подготовленный профиль и миссия читаются после reopen IndexedDB; маршрут Today требует только локальный профиль. A06: два одновременных `commitCheckin` оставляют одну запись и одну ревизию. A08: шаг назад сохраняет значения черновика. A43: `clearOwner` при pending возвращает `{ ok: false, pending }` и не стирает журнал. Доказательство: `yarn test` — 61 passed; `cd backend; .\.venv\Scripts\python -m pytest -q tests/test_acceptance_a01_a02.py` — 2 passed.
+
+- Задачи врача (без препаратов). Типы: examination, measurement, recommendation, symptom_monitor, follow_up. Врач создаёт / меняет / отменяет на карточке экипажа; борт видит на Today и `/onboard/orders`, отмечает выполнение / пропуск / ознакомление. Доставка через `POST /operations` тип `care_order_response` и `GET /care-orders` после pull. Нет дозировок, диагнозов и автосрочности. Доказательство: миграция `20261115_0002`, `backend/tests/test_care_orders.py` — 1 passed; `yarn test` — 65 passed (в т.ч. `careOrder.test.ts`, `careOrders.test.ts`); карточка `CARE-TASKS-P0` в `/evidence`, 2026-11-15.
 
 ## В работе
 

@@ -6,11 +6,13 @@ import { formatZoned, localDateInZone } from '../../domain/clock.ts'
 import { explanationCard, type RuleId } from '../../domain/explanations.ts'
 import type { GeneralPayload } from '../../domain/generalPayload.ts'
 import { feedEventLabel, metricLabel, qualityLabel, sourceLabel } from '../../domain/labels.ts'
+import { listCareOrders } from '../../data/local/careOrders.ts'
 import { db } from '../../data/local/db.ts'
 import { hiddenObservationIds, hideObservation, listCheckins, listMeasurements, listReports, readActiveDraft, readRevisions } from '../../data/local/journal.ts'
 import { environmentId } from '../../data/remote/client.ts'
+import { careKindLabel, careStatusLabel } from '../../domain/labels.ts'
 import { t } from '../../i18n/copy.ts'
-import type { DraftRecord, LocalCheckin, LocalMeasurement, LocalMessage, LocalReport } from '../../data/local/types.ts'
+import type { DraftRecord, LocalCareOrder, LocalCheckin, LocalMeasurement, LocalMessage, LocalReport } from '../../data/local/types.ts'
 
 const STALE_MS = 12 * 60 * 60 * 1000
 
@@ -25,6 +27,7 @@ export function TodayPage() {
   const [measurements, setMeasurements] = useState<LocalMeasurement[]>([])
   const [reports, setReports] = useState<LocalReport[]>([])
   const [messages, setMessages] = useState<LocalMessage[]>([])
+  const [orders, setOrders] = useState<LocalCareOrder[]>([])
   const [draft, setDraft] = useState<DraftRecord | null>(null)
   const [hidden, setHidden] = useState<Set<string>>(new Set())
   const [payload, setPayload] = useState<GeneralPayload | null>(null)
@@ -39,6 +42,7 @@ export function TodayPage() {
     void listCheckins(db, scope).then(setCheckins)
     void listMeasurements(db, scope).then(setMeasurements)
     void listReports(db, scope).then(setReports)
+    void listCareOrders(db, scope).then(setOrders)
     void readActiveDraft(db, scope).then(setDraft)
     void hiddenObservationIds(db, scope).then(setHidden)
     void db.localMessages.where('[owner_id+environment_id]').equals([profile.owner_id, environmentId]).toArray().then((rows) => {
@@ -73,6 +77,7 @@ export function TodayPage() {
       .sort((left, right) => (right.replied_at ?? right.created_at_device).localeCompare(left.replied_at ?? left.created_at_device))[0] ?? null
   const doctorHref = latestReply ? `/onboard/reports/${latestReply.report_id}` : repliedReport ? `/onboard/reports/${repliedReport.id}` : null
   const feed = buildFeed(checkins, measurements, reports, doctorMessages).slice(0, 5)
+  const activeOrders = orders.filter((row) => row.status === 'active' || row.ack_required).slice(0, 3)
 
   return (
     <div className="flex flex-col gap-4">
@@ -81,6 +86,22 @@ export function TodayPage() {
         <p className="numeric text-muted">{formatZoned(openedAt, profile.timezone, locale === 'ru' ? 'ru' : 'en')}</p>
         <p>{t(locale, 'todaySubtitle')}</p>
       </header>
+      <Card title={t(locale, 'careCardToday')} action={<Link className="inline-flex min-h-11 items-center" to="/onboard/orders">{t(locale, 'careOpenAll')}</Link>}>
+        {activeOrders.length === 0 ? <p>{t(locale, 'careEmpty')}</p> : null}
+        <ul className="flex flex-col gap-3">
+          {activeOrders.map((order) => (
+            <li key={order.id}>
+              <Link className="block" to="/onboard/orders">
+                <p>{order.title}</p>
+                <p className="text-sm text-muted">
+                  {careKindLabel(locale, order.kind)} · {careStatusLabel(locale, order.status)}
+                  {order.ack_required ? ` · ${t(locale, 'careAckNeeded')}` : ''}
+                </p>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </Card>
       <Card
         title={t(locale, 'wellbeing')}
         action={

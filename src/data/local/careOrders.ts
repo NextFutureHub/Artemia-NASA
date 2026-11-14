@@ -60,7 +60,7 @@ export async function commitCareOrderResponse(
   operationId: string,
 ): Promise<{ status: 'committed' } | { status: 'rejected'; reason: string }> {
   if (!sameOwner(order, scope)) return { status: 'rejected', reason: 'owner_mismatch' }
-  const hash = await hashOperation(1, 'care_order_response', payload)
+  const hash = await hashOperation({ schemaVersion: 1, type: 'care_order_response', payload })
   const now = new Date().toISOString()
   const outbox: OutboxItem = {
     operation_id: operationId,

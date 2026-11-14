@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, Navigate, Outlet, useParams, useSearchParams } from 'react-router-dom'
 import { useSession } from '../../app/session.tsx'
 import { Banner, Button, Field } from '../../components/ui.tsx'
 import { apiRequest } from '../../data/remote/client.ts'
+import { CARE_ORDER_KINDS } from '../../domain/enums.ts'
+import { careKindLabel, careStatusLabel } from '../../domain/labels.ts'
 import { nextMemorySlice, type MemorySlice, type SliceLoad } from '../../domain/reportSnapshot.ts'
 import { t } from '../../i18n/copy.ts'
 
@@ -288,6 +290,23 @@ export function GroundReportPage() {
   )
 }
 
+type CareOrderItem = {
+  id: string
+  kind: string
+  title: string
+  instructions: string
+  schedule_text: string
+  due_at: string | null
+  status: string
+  revision_no: number
+  cancelled_reason: string | null
+  revise_reason: string | null
+  ack_required: boolean
+  updated_at: string
+  events: Array<{ event_type: string; detail: string | null; server_at: string }>
+  responses: Array<{ id: string; decision: string; note: string | null; recorded_at: string }>
+}
+
 export function CrewPage() {
   const { id } = useParams()
   const [params] = useSearchParams()
@@ -296,6 +315,34 @@ export function CrewPage() {
   const missionId = params.get('mission') ?? ''
   const [slice, setSlice] = useState<MemorySlice<Record<string, unknown>> | null>(null)
   const [mode, setMode] = useState<'live' | 'stale' | 'denied' | 'offline_empty'>('offline_empty')
+  const [tab, setTab] = useState<'overview' | 'orders'>('overview')
+  const [orders, setOrders] = useState<CareOrderItem[]>([])
+  const [ordersError, setOrdersError] = useState<'denied' | 'offline' | null>(null)
+  const [notice, setNotice] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [kind, setKind] = useState<(typeof CARE_ORDER_KINDS)[number]>('measurement')
+  const [title, setTitle] = useState('')
+  const [instructions, setInstructions] = useState('')
+  const [scheduleText, setScheduleText] = useState('')
+  const [dueAt, setDueAt] = useState('')
+  const [editId, setEditId] = useState<string | null>(null)
+  const [reason, setReason] = useState('')
+
+  async function reloadOrders() {
+    if (!session.token || !id || !missionId) return
+    const response = await apiRequest(`/ground/crew/${id}/orders?mission_id=${missionId}`, { token: session.token })
+    if (response.status === 401 || response.status === 403) {
+      setOrdersError('denied')
+      setOrders([])
+      return
+    }
+    if (response.status !== 200 || !isRecord(response.body) || !Array.isArray(response.body.items)) {
+      setOrdersError('offline')
+      return
+    }
+    setOrdersError(null)
+    setOrders(response.body.items.filter(isCareOrderItem))
+  }
 
   useEffect(() => {
     if (!session.token || !id || !missionId) return
@@ -311,21 +358,241 @@ export function CrewPage() {
       setSlice(next.slice)
       setMode(next.mode)
     })
+    void reloadOrders()
   }, [session.token, id, missionId])
 
+  async function createOrder(event: FormEvent) {
+    event.preventDefault()
+    if (!session.token || !id || !missionId || busy) return
+    setBusy(true)
+    const response = await apiRequest(`/ground/crew/${id}/orders?mission_id=${missionId}`, {
+      method: 'POST',
+      token: session.token,
+      body: {
+        kind,
+        title: title.trim(),
+        instructions: instructions.trim(),
+        schedule_text: scheduleText.trim(),
+        due_at: dueAt ? new Date(dueAt).toISOString() : null,
+      },
+    })
+    setBusy(false)
+    if (response.status === 200) {
+      setNotice(t(locale, 'careSaved'))
+      setTitle('')
+      setInstructions('')
+      setScheduleText('')
+      setDueAt('')
+      await reloadOrders()
+      return
+    }
+    setNotice(t(locale, 'errors'))
+  }
+
+  async function reviseOrder(orderId: string) {
+    if (!session.token || busy || reason.trim().length === 0) return
+    setBusy(true)
+    const response = await apiRequest(`/ground/orders/${orderId}/revise`, {
+      method: 'POST',
+      token: session.token,
+      body: {
+        reason: reason.trim(),
+        title: title.trim() || undefined,
+        instructions: instructions.trim() || undefined,
+        schedule_text: scheduleText.trim(),
+        due_at: dueAt ? new Date(dueAt).toISOString() : null,
+      },
+    })
+    setBusy(false)
+    if (response.status === 200) {
+      setNotice(t(locale, 'careSaved'))
+      setEditId(null)
+      setReason('')
+      await reloadOrders()
+      return
+    }
+    setNotice(t(locale, 'errors'))
+  }
+
+  async function cancelOrder(orderId: string) {
+    if (!session.token || busy || reason.trim().length === 0) return
+    setBusy(true)
+    const response = await apiRequest(`/ground/orders/${orderId}/cancel`, {
+      method: 'POST',
+      token: session.token,
+      body: { reason: reason.trim() },
+    })
+    setBusy(false)
+    if (response.status === 200) {
+      setNotice(t(locale, 'careSaved'))
+      setEditId(null)
+      setReason('')
+      await reloadOrders()
+      return
+    }
+    setNotice(t(locale, 'errors'))
+  }
+
   const card = slice?.data
+  const active = orders.filter((row) => row.status === 'active')
+  const history = orders.filter((row) => row.status !== 'active')
+
   return (
     <section className="flex flex-col gap-3">
       {mode === 'stale' && slice ? <Banner tone="attention">{t(locale, 'staleSlice', { time: clockLabel(slice.capturedAt, locale) })}</Banner> : null}
       {mode === 'denied' ? <Banner tone="danger">{t(locale, 'accessDenied')}</Banner> : null}
       <h1 className="text-3xl">{typeof card?.callsign === 'string' ? card.callsign : t(locale, 'crewCard')}</h1>
       <p>{typeof card?.display_name === 'string' ? card.display_name : ''}</p>
-      <p className="text-sm text-muted">{t(locale, 'unsentUnknown')}</p>
-      {isRecord(card?.last_delivered) ? (
-        <p>{String(card.last_delivered.local_date)} · {String(card.last_delivered.overall_state ?? '')}</p>
-      ) : null}
-      <Link to="/ground/inbox">{t(locale, 'groundReports')}</Link>
+      <div className="flex flex-wrap gap-2">
+        <Button variant={tab === 'overview' ? 'primary' : 'quiet'} onClick={() => setTab('overview')}>
+          {t(locale, 'crewCard')}
+        </Button>
+        <Button variant={tab === 'orders' ? 'primary' : 'quiet'} onClick={() => setTab('orders')}>
+          {t(locale, 'careOrders')}
+        </Button>
+      </div>
+      {tab === 'overview' ? (
+        <>
+          <p className="text-sm text-muted">{t(locale, 'unsentUnknown')}</p>
+          {isRecord(card?.last_delivered) ? (
+            <p>{String(card.last_delivered.local_date)} · {String(card.last_delivered.overall_state ?? '')}</p>
+          ) : null}
+          <Link to="/ground/inbox">{t(locale, 'groundReports')}</Link>
+        </>
+      ) : (
+        <>
+          <Banner tone="neutral">{t(locale, 'careOrdersSubtitle')}</Banner>
+          <Banner tone="neutral">{t(locale, 'careNoUrgency')}</Banner>
+          {ordersError === 'denied' ? <Banner tone="danger">{t(locale, 'accessDenied')}</Banner> : null}
+          {ordersError === 'offline' ? <Banner tone="attention">{t(locale, 'serverDown')}</Banner> : null}
+          {notice ? <Banner tone="neutral">{notice}</Banner> : null}
+          <form className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4" onSubmit={(event) => void createOrder(event)}>
+            <h2 className="text-xl">{t(locale, 'careCreate')}</h2>
+            <Field id="care-kind" label={t(locale, 'careKind')}>
+              <select id="care-kind" className="min-h-11 rounded-xl border border-line bg-canvas px-3" value={kind} onChange={(event) => setKind(event.target.value as (typeof CARE_ORDER_KINDS)[number])}>
+                {CARE_ORDER_KINDS.map((item) => (
+                  <option key={item} value={item}>
+                    {careKindLabel(locale, item)}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field id="care-title" label={t(locale, 'careTitle')}>
+              <input id="care-title" className="min-h-11 rounded-xl border border-line bg-canvas px-3" maxLength={120} value={title} onChange={(event) => setTitle(event.target.value)} required />
+            </Field>
+            <Field id="care-instructions" label={t(locale, 'careInstructions')}>
+              <textarea id="care-instructions" className="min-h-24 rounded-xl border border-line bg-canvas px-3 py-2" maxLength={3000} value={instructions} onChange={(event) => setInstructions(event.target.value)} required />
+            </Field>
+            <Field id="care-schedule" label={t(locale, 'careSchedule')}>
+              <input id="care-schedule" className="min-h-11 rounded-xl border border-line bg-canvas px-3" maxLength={500} value={scheduleText} onChange={(event) => setScheduleText(event.target.value)} />
+            </Field>
+            <Field id="care-due" label={t(locale, 'careDue')}>
+              <input id="care-due" type="datetime-local" className="min-h-11 rounded-xl border border-line bg-canvas px-3" value={dueAt} onChange={(event) => setDueAt(event.target.value)} />
+            </Field>
+            <Button type="submit" disabled={busy || title.trim().length === 0 || instructions.trim().length === 0}>
+              {t(locale, 'careCreate')}
+            </Button>
+          </form>
+          <h2 className="text-xl">{t(locale, 'careActive')}</h2>
+          {active.length === 0 ? <p>{t(locale, 'careEmpty')}</p> : null}
+          {active.map((order) => (
+            <article key={order.id} className="rounded-xl border border-line bg-surface p-4">
+              <p className="text-lg">{order.title}</p>
+              <p className="text-sm text-muted">
+                {careKindLabel(locale, order.kind)} · {careStatusLabel(locale, order.status)} · rev {order.revision_no}
+              </p>
+              <p className="mt-2">{order.instructions}</p>
+              {order.schedule_text ? <p className="mt-2 text-sm">{t(locale, 'careSchedule')}: {order.schedule_text}</p> : null}
+              {order.due_at ? <p className="numeric mt-1 text-sm text-muted">{t(locale, 'careDue')}: {clockLabel(order.due_at, locale)}</p> : null}
+              <CareExecution locale={locale} order={order} />
+              {editId === order.id ? (
+                <div className="mt-3 flex flex-col gap-2">
+                  <Field id={`reason-${order.id}`} label={t(locale, 'careReason')}>
+                    <textarea id={`reason-${order.id}`} className="min-h-20 rounded-xl border border-line bg-canvas px-3 py-2" maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} />
+                  </Field>
+                  <div className="flex flex-wrap gap-2">
+                    <Button disabled={busy || reason.trim().length === 0} onClick={() => void reviseOrder(order.id)}>
+                      {t(locale, 'careRevise')}
+                    </Button>
+                    <Button variant="danger" disabled={busy || reason.trim().length === 0} onClick={() => void cancelOrder(order.id)}>
+                      {t(locale, 'careCancel')}
+                    </Button>
+                    <Button variant="quiet" onClick={() => { setEditId(null); setReason('') }}>
+                      {t(locale, 'cancel')}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button
+                  className="mt-3"
+                  variant="secondary"
+                  onClick={() => {
+                    setEditId(order.id)
+                    setTitle(order.title)
+                    setInstructions(order.instructions)
+                    setScheduleText(order.schedule_text)
+                    setDueAt(order.due_at ? order.due_at.slice(0, 16) : '')
+                    setReason('')
+                  }}
+                >
+                  {t(locale, 'careRevise')} / {t(locale, 'careCancel')}
+                </Button>
+              )}
+            </article>
+          ))}
+          <h2 className="text-xl">{t(locale, 'careHistory')}</h2>
+          {history.length === 0 ? <p>{t(locale, 'careHistoryEmpty')}</p> : null}
+          {history.map((order) => (
+            <article key={order.id} className="rounded-xl border border-line bg-surface p-4">
+              <p className="text-lg">{order.title}</p>
+              <p className="text-sm text-muted">
+                {careKindLabel(locale, order.kind)} · {careStatusLabel(locale, order.status)}
+              </p>
+              {order.cancelled_reason ? <p className="mt-2 text-sm">{t(locale, 'careCancel')}: {order.cancelled_reason}</p> : null}
+              <CareExecution locale={locale} order={order} />
+            </article>
+          ))}
+        </>
+      )}
     </section>
+  )
+}
+
+function CareExecution({ locale, order }: { locale: 'ru' | 'en'; order: CareOrderItem }) {
+  if (order.responses.length === 0 && order.events.length === 0) return null
+  return (
+    <div className="mt-3">
+      <p className="text-sm text-muted">{t(locale, 'careExecution')}</p>
+      <ul className="mt-1 flex flex-col gap-1 text-sm">
+        {order.responses.map((row) => (
+          <li key={row.id}>
+            {row.decision}
+            {row.note ? ` · ${row.note}` : ''} · {clockLabel(row.recorded_at, locale)}
+          </li>
+        ))}
+        {order.events
+          .filter((event) => event.event_type !== 'created')
+          .map((event, index) => (
+            <li key={`${event.event_type}-${index}`}>
+              {event.event_type}
+              {event.detail ? ` · ${event.detail}` : ''} · {clockLabel(event.server_at, locale)}
+            </li>
+          ))}
+      </ul>
+    </div>
+  )
+}
+
+function isCareOrderItem(value: unknown): value is CareOrderItem {
+  return (
+    isRecord(value) &&
+    typeof value.id === 'string' &&
+    typeof value.kind === 'string' &&
+    typeof value.title === 'string' &&
+    typeof value.instructions === 'string' &&
+    typeof value.status === 'string' &&
+    Array.isArray(value.events) &&
+    Array.isArray(value.responses)
   )
 }
 

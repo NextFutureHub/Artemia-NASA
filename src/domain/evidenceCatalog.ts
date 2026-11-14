@@ -74,6 +74,18 @@ export const EVIDENCE_CATALOG: EvidenceCard[] = [
     kind: 'prototype_rule',
     accessedAt: EVIDENCE_CHECKED_AT,
   },
+  {
+    id: 'CARE-TASKS-P0',
+    title: 'Задачи врача без лекарственных назначений',
+    organization: 'Artemia',
+    url: '',
+    summary:
+      'Врач может поручить обследование, измерение, рекомендацию, контроль симптомов или повторную консультацию. Борт отмечает выполнение, пропуск и ознакомление.',
+    limitations:
+      'Нет препаратов, дозировок, подбора схем и диагнозов. Задача — канал наблюдения и связи, не клиническое решение прототипа и не одобрение NASA.',
+    kind: 'prototype_rule',
+    accessedAt: EVIDENCE_CHECKED_AT,
+  },
 ]
 
 export function visibleEvidence(query: string, kind: EvidenceKind | 'all', cards: EvidenceCard[] = EVIDENCE_CATALOG): EvidenceCard[] {

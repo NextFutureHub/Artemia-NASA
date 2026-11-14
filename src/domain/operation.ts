@@ -12,6 +12,7 @@ import {
   REPORT_REASONS,
   SHARING_MODES,
 } from './enums.ts'
+import { careOrderResponsePayloadSchema } from './careOrder.ts'
 import { generalPayloadSchema } from './generalPayload.ts'
 import { personalPayloadSchema } from './personalPayload.ts'
 import { SCHEMA_VERSION } from './schemaVersion.ts'
@@ -236,6 +237,7 @@ const operationSchemas = {
   invalidation: invalidationSchema,
   profile_preferences: profilePreferencesSchema,
   consent_change: consentChangeSchema,
+  care_order_response: careOrderResponsePayloadSchema,
 } as const
 
 export function parseOperationPayload(type: z.infer<typeof operationTypeSchema>, payload: unknown) {

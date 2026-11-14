@@ -27,8 +27,25 @@ export function outboxEntityLabel(locale: Locale, entityType: OperationType | st
   if (entityType === 'measurement') return t(locale, 'entityMeasurement')
   if (entityType === 'report_bundle') return t(locale, 'entityReport')
   if (entityType === 'profile_preferences') return t(locale, 'entityPreferences')
+  if (entityType === 'care_order_response') return t(locale, 'entityCareOrder')
   if (entityType === 'consent_change' || entityType === 'invalidation') return t(locale, 'protectedPart')
   return t(locale, 'protectedPart')
+}
+
+export function careKindLabel(locale: Locale, kind: string): string {
+  if (kind === 'examination') return t(locale, 'careKindExamination')
+  if (kind === 'measurement') return t(locale, 'careKindMeasurement')
+  if (kind === 'recommendation') return t(locale, 'careKindRecommendation')
+  if (kind === 'symptom_monitor') return t(locale, 'careKindSymptom')
+  if (kind === 'follow_up') return t(locale, 'careKindFollowUp')
+  return kind
+}
+
+export function careStatusLabel(locale: Locale, status: string): string {
+  if (status === 'active') return t(locale, 'careStatusActive')
+  if (status === 'cancelled') return t(locale, 'careStatusCancelled')
+  if (status === 'completed') return t(locale, 'careStatusCompleted')
+  return status
 }
 
 export function outboxStateLabel(locale: Locale, state: string): string {

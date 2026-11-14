@@ -63,6 +63,7 @@ export function OnboardShell() {
         <nav id="board-menu" className="mt-6 flex flex-1 flex-col gap-1" aria-label={t(locale, 'menu')}>
           <ShellLink to="/onboard/today" label={t(locale, 'today')} onNavigate={() => setOpen(false)} />
           <ShellLink to="/onboard/measurements" label={t(locale, 'measurements')} onNavigate={() => setOpen(false)} />
+          <ShellLink to="/onboard/orders" label={t(locale, 'careOrders')} onNavigate={() => setOpen(false)} />
           <ShellLink to="/onboard/history" label={t(locale, 'history')} onNavigate={() => setOpen(false)} />
           <ShellLink to="/onboard/reports" label={t(locale, 'reports')} onNavigate={() => setOpen(false)} />
         </nav>
