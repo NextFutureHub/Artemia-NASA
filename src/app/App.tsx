@@ -4,7 +4,9 @@ import { SessionProvider } from './session.tsx'
 import { LoginPage } from '../features/auth/LoginPage.tsx'
 import { CheckinPage } from '../features/checkin/CheckinPage.tsx'
 import { CheckinViewPage } from '../features/checkin/CheckinViewPage.tsx'
-import { EvidencePage, GroundHoldPage, NotFoundPage, ReportsPage } from '../features/evidence/EvidencePage.tsx'
+import { EvidencePage, NotFoundPage } from '../features/evidence/EvidencePage.tsx'
+import { CrewPage, GroundReportPage, GroundShell, InboxPage } from '../features/doctor/GroundPages.tsx'
+import { ReportEditorPage, ReportViewPage, ReportsPage } from '../features/reports/ReportPages.tsx'
 import { HistoryPage } from '../features/history/HistoryPage.tsx'
 import { MeasurementsPage } from '../features/measurements/MeasurementsPage.tsx'
 import { PreparePage } from '../features/prepare/PreparePage.tsx'
@@ -21,7 +23,11 @@ export default function App() {
           <Route path="/" element={<HomeRedirect />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/prepare" element={<PreparePage />} />
-          <Route path="/ground/inbox" element={<GroundHoldPage />} />
+          <Route path="/ground" element={<GroundShell />}>
+            <Route path="inbox" element={<InboxPage />} />
+            <Route path="reports/:id" element={<GroundReportPage />} />
+            <Route path="crew/:id" element={<CrewPage />} />
+          </Route>
           <Route path="/evidence" element={<EvidencePage />} />
           <Route element={<RequireJournal />}>
             <Route element={<OnboardShell />}>
@@ -31,6 +37,8 @@ export default function App() {
               <Route path="/onboard/measurements" element={<MeasurementsPage />} />
               <Route path="/onboard/history" element={<HistoryPage />} />
               <Route path="/onboard/reports" element={<ReportsPage />} />
+              <Route path="/onboard/reports/new" element={<ReportEditorPage />} />
+              <Route path="/onboard/reports/:id" element={<ReportViewPage />} />
               <Route path="/onboard/profile" element={<ProfilePage />} />
               <Route path="/onboard/sync" element={<ConnectionPage />} />
             </Route>

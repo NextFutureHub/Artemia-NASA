@@ -13,6 +13,8 @@ type SessionValue = {
   setLocale: (locale: Locale) => void
   token: string | null
   userId: string | null
+  role: 'astronaut' | 'doctor' | null
+  roleChecked: boolean
   profile: PreparedProfile | null
   mission: MissionCache | null
   assignment: AssignmentCache | null
@@ -34,6 +36,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>('ru')
   const [token, setToken] = useState<string | null>(() => sessionStorage.getItem('artemia.token'))
   const [userId, setUserId] = useState<string | null>(() => sessionStorage.getItem('artemia.userId'))
+  const [role, setRole] = useState<'astronaut' | 'doctor' | null>(() => readRole())
+  const [roleChecked, setRoleChecked] = useState(() => sessionStorage.getItem('artemia.token') === null)
   const [profile, setProfile] = useState<PreparedProfile | null>(null)
   const [mission, setMission] = useState<MissionCache | null>(null)
   const [assignment, setAssignment] = useState<AssignmentCache | null>(null)
@@ -91,6 +95,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [locale])
 
   useEffect(() => {
+    const current = sessionStorage.getItem('artemia.token')
+    if (!current) return
+    void apiRequest('/auth/me', { token: current }).then((me) => {
+      if (me.ok && isRecord(me.body) && (me.body.role === 'doctor' || me.body.role === 'astronaut')) {
+        sessionStorage.setItem('artemia.role', me.body.role)
+        setRole(me.body.role)
+      }
+      setRoleChecked(true)
+    })
+  }, [token])
+
+  useEffect(() => {
     const kick = window.setTimeout(() => void probe(), 0)
     const timer = window.setInterval(() => void probe(), 30_000)
     return () => {
@@ -118,6 +134,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
     sessionStorage.setItem('artemia.token', nextToken)
     sessionStorage.setItem('artemia.userId', me.body.id)
+    if (me.body.role === 'doctor' || me.body.role === 'astronaut') {
+      sessionStorage.setItem('artemia.role', me.body.role)
+      setRole(me.body.role)
+      setRoleChecked(true)
+    }
     setToken(nextToken)
     setUserId(me.body.id)
     if (!profile && (me.body.locale === 'ru' || me.body.locale === 'en')) setLocaleState(me.body.locale)
@@ -129,8 +150,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   function logout() {
     sessionStorage.removeItem('artemia.token')
     sessionStorage.removeItem('artemia.userId')
+    sessionStorage.removeItem('artemia.role')
     setToken(null)
     setUserId(null)
+    setRole(null)
   }
 
   const value: SessionValue = {
@@ -139,6 +162,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setLocale,
     token,
     userId,
+    role,
+    roleChecked,
     profile,
     mission,
     assignment,
@@ -159,6 +184,11 @@ export function useSession(): SessionValue {
   const value = useContext(SessionContext)
   if (!value) throw new Error('session missing')
   return value
+}
+
+function readRole(): 'astronaut' | 'doctor' | null {
+  const stored = sessionStorage.getItem('artemia.role')
+  return stored === 'doctor' || stored === 'astronaut' ? stored : null
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

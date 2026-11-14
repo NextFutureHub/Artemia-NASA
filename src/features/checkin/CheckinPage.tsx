@@ -7,6 +7,7 @@ import { AppDialog, Banner, Button, Field } from '../../components/ui.tsx'
 import { dateToZonedInput, formatZoned, localDateInZone, zonedInputToDate } from '../../domain/clock.ts'
 import {
   buildGeneralPayload,
+  checkinSteps,
   emptyCheckinDraft,
   emptySymptom,
   isFilledLater,
@@ -16,7 +17,8 @@ import {
   type CheckinStep,
   type SymptomDraft,
 } from '../../domain/checkinDraft.ts'
-import type { SymptomCode } from '../../domain/enums.ts'
+import { buildPersonalPayload } from '../../domain/personalDraft.ts'
+import type { SharingMode, SymptomCode } from '../../domain/enums.ts'
 import { db } from '../../data/local/db.ts'
 import {
   commitCheckin,
@@ -27,6 +29,7 @@ import {
   readCheckin,
   readRevisions,
   saveDraft,
+  updateProfile,
 } from '../../data/local/journal.ts'
 import { environmentId } from '../../data/remote/client.ts'
 import {
@@ -42,8 +45,7 @@ import {
   t,
 } from '../../i18n/copy.ts'
 import type { DraftRecord, LocalDelivery, LocalMeasurement } from '../../data/local/types.ts'
-
-const STEPS: CheckinStep[] = ['general', 'symptoms', 'measurements', 'review']
+import { PersonalStep } from './PersonalStep.tsx'
 
 export function CheckinPage() {
   const session = useSession()
@@ -63,6 +65,9 @@ export function CheckinPage() {
   const [undo, setUndo] = useState<SymptomDraft | null>(null)
   const [measurements, setMeasurements] = useState<LocalMeasurement[]>([])
   const [failure, setFailure] = useState('')
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [sectionEnabled, setSectionEnabled] = useState(profile?.reproductive_enabled ?? false)
+  const [sectionSharing, setSectionSharing] = useState<SharingMode>(profile?.sensitive_sharing ?? 'device_only')
   const stepRef = useRef(step)
   stepRef.current = step
   const draftRef = useRef(draft)
@@ -87,7 +92,7 @@ export function CheckinPage() {
         return
       }
       const reviseId = params.get('revise')
-      const created = await createDraft(profile.owner_id, profile.timezone, params.get('mode') === 'change' ? 'change' : 'daily', reviseId)
+      const created = await createDraft(profile.owner_id, profile.timezone, params.get('mode') === 'change' ? 'change' : 'daily', reviseId, profile.sensitive_sharing)
       if (!created || cancelled) return
       const stored = await ensureActiveCheckinDraft(db, created)
       if (cancelled) return
@@ -122,13 +127,20 @@ export function CheckinPage() {
   }, [draft?.id, form])
 
   function openDraft(next: DraftRecord) {
-    setDraft(next)
-    setStep(next.step)
-    form.reset(next.values)
+    const values = {
+      ...emptyCheckinDraft(next.values.type, next.values.recordedAtLocal, next.values.personalSharing ?? 'device_only'),
+      ...next.values,
+    }
+    const visible = checkinSteps(profile?.reproductive_enabled ?? false)
+    setDraft({ ...next, values })
+    setStep(visible.includes(next.step) ? next.step : 'general')
+    form.reset(values)
     setSavedAt(next.updated_at)
   }
 
   if (!profile) return null
+  const activeProfile = profile
+  const steps = checkinSteps(activeProfile.reproductive_enabled)
   const timeZone = profile.timezone
   const errorFor = (path: string) => {
     const issue = issues.find((item) => item.path === path)
@@ -136,8 +148,8 @@ export function CheckinPage() {
   }
 
   function go(next: CheckinStep) {
-    const currentIssues = issuesForStep(step, form.getValues(), timeZone, new Date())
-    if (STEPS.indexOf(next) > STEPS.indexOf(step) && currentIssues.length > 0) {
+    const currentIssues = issuesForStep(step, form.getValues(), timeZone, new Date(), activeProfile.reproductive_enabled)
+    if (steps.indexOf(next) > steps.indexOf(step) && currentIssues.length > 0) {
       setIssues(currentIssues)
       document.getElementById(currentIssues[0]?.path ?? '')?.focus()
       return
@@ -152,21 +164,43 @@ export function CheckinPage() {
   async function onSave() {
     if (saving || !draft || !profile) return
     const now = new Date()
-    const built = buildGeneralPayload(form.getValues(), timeZone, now)
-    if (!built.payload) {
-      setIssues(built.issues)
-      document.getElementById(built.issues[0]?.path ?? '')?.focus()
+    const currentValues = form.getValues()
+    const built = buildGeneralPayload(currentValues, timeZone, now)
+    const personalBuilt = buildPersonalPayload(currentValues, profile.reproductive_enabled)
+    const combined = [...built.issues, ...personalBuilt.issues]
+    if (!built.payload || combined.length > 0) {
+      setIssues(combined)
+      document.getElementById(combined[0]?.path ?? '')?.focus()
       return
     }
     setSaving(true)
     setFailure('')
     const operationId = draft.operation_id ?? crypto.randomUUID()
-    const recorded = zonedInputToDate(form.getValues().recordedAtLocal, timeZone) ?? now
+    const recorded = zonedInputToDate(currentValues.recordedAtLocal, timeZone) ?? now
+    const personalCommit = personalBuilt.payload
+      ? {
+          payload: personalBuilt.payload,
+          sharing: currentValues.personalSharing ?? 'device_only',
+          personalId: crypto.randomUUID(),
+          consentId: crypto.randomUUID(),
+          consentOperationId: crypto.randomUUID(),
+          assignmentId: session.assignment?.assignment_id ?? null,
+        }
+      : null
     try {
-      const status = await commitCheckin(db, { ownerId: profile.owner_id, environmentId }, draft.id, operationId, built.payload, share, {
-        recordedAt: recorded.toISOString(),
-        localDate: localDateInZone(recorded, timeZone),
-      })
+      const status = await commitCheckin(
+        db,
+        { ownerId: profile.owner_id, environmentId },
+        draft.id,
+        operationId,
+        built.payload,
+        share,
+        {
+          recordedAt: recorded.toISOString(),
+          localDate: localDateInZone(recorded, timeZone),
+        },
+        personalCommit,
+      )
       if (status.status === 'committed') {
         setResult({ at: status.savedAt, delivery: status.delivery, id: status.entityId })
         await session.refreshLocal()
@@ -189,7 +223,7 @@ export function CheckinPage() {
         <p className="text-sm text-muted">{t(locale, 'notServerReceipt')}</p>
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => navigate(`/onboard/checkin/${result.id}`)}>{t(locale, 'openRecord')}</Button>
-          <Button variant="secondary" disabled>
+          <Button variant="secondary" onClick={() => navigate(`/onboard/reports/new?checkin=${result.id}`)}>
             {t(locale, 'prepareReport')}
           </Button>
           <Button variant="quiet" onClick={() => navigate('/onboard/today')}>
@@ -210,12 +244,12 @@ export function CheckinPage() {
       onSubmit={(event) => {
         event.preventDefault()
         if (step === 'review') void onSave()
-        else go(STEPS[STEPS.indexOf(step) + 1] ?? step)
+        else go(steps[steps.indexOf(step) + 1] ?? step)
       }}
     >
       <div className="flex items-start justify-between gap-3">
         <ol className="flex flex-wrap gap-2 text-sm">
-          {STEPS.map((item, index) => (
+          {steps.map((item, index) => (
             <li key={item} className={item === step ? 'text-accent' : 'text-muted'}>
               {index + 1}. {t(locale, stepKey(item))}
             </li>
@@ -370,6 +404,14 @@ export function CheckinPage() {
         </section>
       ) : null}
 
+      {step === 'personal' ? (
+        <PersonalStep form={form} values={values} locale={locale} errorFor={errorFor} onConfigure={() => {
+          setSectionEnabled(profile.reproductive_enabled)
+          setSectionSharing(profile.sensitive_sharing)
+          setSettingsOpen(true)
+        }} />
+      ) : null}
+
       {step === 'measurements' ? (
         <section className="flex flex-col gap-3">
           <p>{t(locale, 'measurementsOptional')}</p>
@@ -416,9 +458,11 @@ export function CheckinPage() {
             <input type="checkbox" checked={share} onChange={(event) => setShare(event.target.checked)} />
             {t(locale, 'exchange')}
           </label>
-          <p>
-            {t(locale, 'personalDelivery')}: {profile.reproductive_enabled ? t(locale, 'personalLater') : t(locale, 'personalOff')}
-          </p>
+          <p>{t(locale, 'personalDelivery')}: {personalLine(locale, profile.reproductive_enabled, values.personalFill, values.personalSharing, share)}</p>
+          {profile.reproductive_enabled && values.personalSharing === 'assigned_doctor' && !share ? (
+            <p className="text-sm text-attention">{t(locale, 'personalNeedsGeneral')}</p>
+          ) : null}
+          <p className="text-sm text-muted">{t(locale, 'exchangeHint')}</p>
           <p>
             {t(locale, 'linkState')}: {session.connection === 'online' ? t(locale, 'linkUp') : t(locale, 'linkDown')}
           </p>
@@ -434,7 +478,7 @@ export function CheckinPage() {
             {t(locale, 'cancel')}
           </Button>
         ) : (
-          <Button type="button" variant="quiet" onClick={() => go(STEPS[STEPS.indexOf(step) - 1] ?? 'general')}>
+          <Button type="button" variant="quiet" onClick={() => go(steps[steps.indexOf(step) - 1] ?? 'general')}>
             {t(locale, 'back')}
           </Button>
         )}
@@ -466,7 +510,7 @@ export function CheckinPage() {
           onClick={() => {
             if (!prompt || !profile) return
             void deleteDraft(db, { ownerId: profile.owner_id, environmentId }, prompt.id).then(async () => {
-              const created = await createDraft(profile.owner_id, profile.timezone, params.get('mode') === 'change' ? 'change' : 'daily', params.get('revise'))
+              const created = await createDraft(profile.owner_id, profile.timezone, params.get('mode') === 'change' ? 'change' : 'daily', params.get('revise'), profile.sensitive_sharing)
               if (created) {
                 await saveDraft(db, created)
                 openDraft(created)
@@ -499,15 +543,56 @@ export function CheckinPage() {
           {t(locale, 'cancel')}
         </Button>
       </AppDialog>
+      <AppDialog open={settingsOpen} onOpenChange={setSettingsOpen} title={t(locale, 'configureSection')} description={t(locale, 'personalHint')}>
+        <label className="flex min-h-11 items-center gap-2">
+          <input type="checkbox" checked={sectionEnabled} onChange={(event) => setSectionEnabled(event.target.checked)} />
+          {t(locale, 'personalToggle')}
+        </label>
+        <label className="flex min-h-11 items-center gap-2">
+          <input type="radio" name="section-sharing" checked={sectionSharing === 'device_only'} onChange={() => setSectionSharing('device_only')} />
+          {t(locale, 'deviceOnly')}
+        </label>
+        <label className="flex min-h-11 items-center gap-2">
+          <input type="radio" name="section-sharing" checked={sectionSharing === 'assigned_doctor'} onChange={() => setSectionSharing('assigned_doctor')} />
+          {t(locale, 'assignedDoctor')}
+        </label>
+        <Button
+          type="button"
+          onClick={() => {
+            const next = { ...profile, reproductive_enabled: sectionEnabled, sensitive_sharing: sectionSharing }
+            void updateProfile(db, next).then(() => session.refreshLocal())
+            form.setValue('personalSharing', sectionSharing)
+            if (!sectionEnabled) setStep('symptoms')
+            setSettingsOpen(false)
+          }}
+        >
+          {t(locale, 'saveSettings')}
+        </Button>
+      </AppDialog>
     </form>
   )
 }
 
-function stepKey(step: CheckinStep): 'generalStep' | 'symptomsStep' | 'measurementsStep' | 'reviewStep' {
+function stepKey(step: CheckinStep): 'generalStep' | 'symptomsStep' | 'personalStep' | 'measurementsStep' | 'reviewStep' {
   if (step === 'symptoms') return 'symptomsStep'
+  if (step === 'personal') return 'personalStep'
   if (step === 'measurements') return 'measurementsStep'
   if (step === 'review') return 'reviewStep'
   return 'generalStep'
+}
+
+function personalLine(
+  locale: 'ru' | 'en',
+  enabled: boolean,
+  fill: CheckinDraftValues['personalFill'],
+  sharing: CheckinDraftValues['personalSharing'],
+  shareGeneral: boolean,
+): string {
+  if (!enabled) return t(locale, 'personalOff')
+  if (fill !== 'yes') return t(locale, 'personalLater')
+  if (sharing === 'assigned_doctor' && shareGeneral) return t(locale, 'assignedDoctor')
+  if (sharing === 'assigned_doctor') return t(locale, 'personalNeedsGeneral')
+  return t(locale, 'deviceOnly')
 }
 
 function options<T extends string>(map: Record<T, { ru: string; en: string }>) {
@@ -603,7 +688,13 @@ function updateSymptom(form: ReturnType<typeof useForm<CheckinDraftValues>>, ind
   form.setValue('symptoms', symptoms)
 }
 
-async function createDraft(ownerId: string, timeZone: string, type: 'daily' | 'change', reviseId: string | null): Promise<DraftRecord | null> {
+async function createDraft(
+  ownerId: string,
+  timeZone: string,
+  type: 'daily' | 'change',
+  reviseId: string | null,
+  sharing: SharingMode,
+): Promise<DraftRecord | null> {
   const now = dateToZonedInput(new Date(), timeZone)
   if (!reviseId) {
     const checkinId = crypto.randomUUID()
@@ -622,7 +713,7 @@ async function createDraft(ownerId: string, timeZone: string, type: 'daily' | 'c
       root_id: checkinId,
       reason: '',
       operation_id: null,
-      values: emptyCheckinDraft(type, now),
+      values: emptyCheckinDraft(type, now, sharing),
       updated_at: new Date().toISOString(),
     }
   }

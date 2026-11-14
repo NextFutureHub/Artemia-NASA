@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { ArtemiaDb } from '../data/local/db.ts'
 import type { LocalCheckin, OutboxItem } from '../data/local/types.ts'
-import { runDelivery, type OperationResponse } from './delivery.ts'
+import { personalSendBlocked, runDelivery, type OperationResponse } from './delivery.ts'
 
 const OWNER = '22222222-2222-4222-8222-222222222222'
 const OTHER = '33333333-3333-4333-8333-333333333333'
@@ -176,6 +176,13 @@ test('pull advances the cursor only with the returned events', async () => {
   const audit = await database.localAudit.toArray()
   assert.equal(audit.some((row) => row.event_code === 'pull_seen' && row.entity_id === 'server-op'), true)
   await database.delete()
+})
+
+test('a consented personal part can be sent and a leak in the general snapshot cannot', () => {
+  assert.equal(personalSendBlocked({ personal: null }), false)
+  assert.equal(personalSendBlocked({ personal: { consent_event_id: '10000000-0000-4000-8000-000000000401', personal_payload: { bleeding_category: 'none' } } }), false)
+  assert.equal(personalSendBlocked({ personal: { personal_payload: { bleeding_category: 'none' } } }), true)
+  assert.equal(personalSendBlocked({ revision: { general_payload: { bleeding_category: 'none' } }, personal: null }), true)
 })
 
 async function seeded(): Promise<ArtemiaDb> {

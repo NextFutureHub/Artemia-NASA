@@ -21,7 +21,8 @@ def test_seed_sources_do_not_contain_passwords():
     assert "SEED_ALEX_PASSWORD=" in example
     assert "SEED_FLIGHT_DOC_PASSWORD=" in example
     assert "SUPABASE" not in example
-    assert "VITE_" not in example
+    vite_lines = [line for line in example.splitlines() if line.startswith("VITE_")]
+    assert vite_lines == ["VITE_ENVIRONMENT=demo", "VITE_API_URL=http://localhost:8000"]
     assert "service_role" not in example.lower()
 
 

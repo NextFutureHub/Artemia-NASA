@@ -1,17 +1,25 @@
 import { hashOperation, hashPayloadPart } from '../../domain/canonicalJson.ts'
-import { checkinBundleSchema, measurementOperationSchema, profilePreferencesSchema } from '../../domain/operation.ts'
+import { checkinBundleSchema, consentChangeSchema, measurementOperationSchema, profilePreferencesSchema, reportBundleSchema } from '../../domain/operation.ts'
 import { SCHEMA_VERSION } from '../../domain/schemaVersion.ts'
 import type { GeneralPayload } from '../../domain/generalPayload.ts'
-import { OPERATION_TYPES, type OperationType } from '../../domain/enums.ts'
+import type { PersonalPayload } from '../../domain/personalPayload.ts'
+import type { ReportSnapshot } from '../../domain/reportSnapshot.ts'
+import { mergeReportStatus } from '../../domain/reportSnapshot.ts'
+import { OPERATION_TYPES, type ConsentDecision, type ConsentScope, type OperationType, type ReportReason, type SharingMode } from '../../domain/enums.ts'
 import type { ArtemiaDb } from './db.ts'
 import type {
   AssignmentCache,
   DraftRecord,
   LocalAudit,
   LocalCheckin,
+  LocalConsent,
   LocalDelivery,
   LocalMeasurement,
+  LocalMessage,
+  LocalPersonalReport,
+  LocalPersonalRevision,
   LocalReceipt,
+  LocalReport,
   LocalRevision,
   MissionCache,
   OutboxItem,
@@ -24,9 +32,24 @@ import type {
 const ALLOWED_OUTBOX = new Set<string>(OPERATION_TYPES)
 
 export type CommitStatus =
-  | { status: 'committed'; entityId: string; delivery: LocalDelivery; savedAt: string }
+  | {
+      status: 'committed'
+      entityId: string
+      delivery: LocalDelivery
+      savedAt: string
+      personalDelivery?: 'omitted' | 'local_only' | 'queued'
+    }
   | { status: 'conflict' }
   | { status: 'rejected'; reason: string }
+
+export type PersonalCommit = {
+  payload: PersonalPayload
+  sharing: SharingMode
+  personalId: string
+  consentId: string
+  consentOperationId: string
+  assignmentId: string | null
+}
 
 export async function readPreparedProfile(database: ArtemiaDb, environmentId: string): Promise<PreparedProfile | null> {
   const rows = await database.preparedProfiles.where('environment_id').equals(environmentId).toArray()
@@ -90,6 +113,7 @@ export async function commitCheckin(
   general: GeneralPayload,
   shareGeneral: boolean,
   clock: { recordedAt: string; localDate: string },
+  personal: PersonalCommit | null = null,
 ): Promise<CommitStatus> {
   const savedAt = new Date().toISOString()
   const draft = await database.drafts.get(draftId)
@@ -131,9 +155,18 @@ export async function commitCheckin(
       general_payload: general,
       reason: draft.revision_no === 1 ? null : draft.reason.trim(),
     },
-    personal: null,
+    personal: null as { id: string; personal_payload: PersonalPayload; consent_event_id: string } | null,
     measurement_ids: measurementIds,
   }
+  const sendPersonal = personal !== null && personal.sharing === 'assigned_doctor' && shareGeneral && personal.assignmentId !== null
+  if (sendPersonal && personal) {
+    bundle.personal = {
+      id: personal.personalId,
+      personal_payload: personal.payload,
+      consent_event_id: personal.consentId,
+    }
+  }
+  const personalHash = personal ? await hashPayloadPart(personal.payload) : null
   const parsed = checkinBundleSchema.safeParse(bundle)
   if (!parsed.success) return { status: 'rejected', reason: 'invalid_bundle' }
   const payloadHash = await hashOperation({
@@ -153,6 +186,22 @@ export async function commitCheckin(
   if (draft.status !== 'active') return { status: 'rejected', reason: 'draft_missing' }
   const partHash = await hashPayloadPart(parsed.data.revision.general_payload)
   const delivery: LocalDelivery = shareGeneral ? 'queued' : 'local_only'
+  const personalDelivery: 'omitted' | 'local_only' | 'queued' = personal === null ? 'omitted' : sendPersonal ? 'queued' : 'local_only'
+  const consentPayload = sendPersonal && personal
+    ? consentChangeSchema.parse({
+        id: personal.consentId,
+        mission_id: profile.mission_id,
+        scope: 'personal_sharing',
+        decision: 'granted',
+        assignment_id: personal.assignmentId,
+        supersedes_id: null,
+        recorded_at: clock.recordedAt,
+        created_at_device: savedAt,
+      })
+    : null
+  const consentHash = consentPayload
+    ? await hashOperation({ schemaVersion: SCHEMA_VERSION, type: 'consent_change', payload: consentPayload })
+    : null
   try {
     return await database.transaction(
       'rw',
@@ -160,8 +209,10 @@ export async function commitCheckin(
         database.drafts,
         database.localCheckins,
         database.localCheckinRevisions,
+        database.localPersonalRevisions,
         database.localMeasurements,
         database.localCheckinMeasurements,
+        database.consentCache,
         database.outbox,
         database.receipts,
         database.localAudit,
@@ -203,6 +254,22 @@ export async function commitCheckin(
           created_at_device: savedAt,
         }
         await database.localCheckinRevisions.put(revision)
+        if (personal && personalHash) {
+          const personalRow: LocalPersonalRevision = {
+            id: personal.personalId,
+            owner_id: scope.ownerId,
+            environment_id: scope.environmentId,
+            checkin_id: draft.checkin_id,
+            general_revision_id: draft.revision_id,
+            personal_payload: personal.payload,
+            payload_hash: personalHash,
+            sharing: personal.sharing,
+            consent_event_id: sendPersonal ? personal.consentId : null,
+            included_in_outbox: sendPersonal,
+            schema_version: 1,
+          }
+          await database.localPersonalRevisions.put(personalRow)
+        }
         for (const measurementId of measurementIds) {
           await database.localCheckinMeasurements.put({
             owner_id: scope.ownerId,
@@ -212,6 +279,41 @@ export async function commitCheckin(
           })
         }
         const dependencies: string[] = []
+        if (sendPersonal && personal && consentPayload && consentHash) {
+          const consent: LocalConsent = {
+            id: personal.consentId,
+            owner_id: scope.ownerId,
+            environment_id: scope.environmentId,
+            mission_id: profile.mission_id,
+            scope: 'personal_sharing',
+            decision: 'granted',
+            assignment_id: personal.assignmentId,
+            supersedes_id: null,
+            recorded_at: clock.recordedAt,
+            created_at_device: savedAt,
+            applied_on_server: false,
+            operation_id: personal.consentOperationId,
+          }
+          await database.consentCache.put(consent)
+          await enqueue(database, {
+            operation_id: personal.consentOperationId,
+            owner_id: scope.ownerId,
+            environment_id: scope.environmentId,
+            entity_type: 'consent_change',
+            entity_id: personal.consentId,
+            payload_version: 1,
+            frozen_payload: consentPayload,
+            payload_hash: consentHash,
+            dependencies: [],
+            state: 'pending',
+            attempts: 0,
+            next_attempt_at: savedAt,
+            last_error_code: null,
+            lease_until: null,
+            created_at: savedAt,
+          })
+          dependencies.push(personal.consentOperationId)
+        }
         if (shareGeneral) {
           for (const measurement of measurements) {
             dependencies.push(measurement.operation_id)
@@ -250,7 +352,7 @@ export async function commitCheckin(
         })
         await writeAudit(database, scope, 'checkin_saved', operationId, draft.checkin_id, savedAt)
         await database.drafts.put({ ...draft, status: 'completed', operation_id: operationId, updated_at: savedAt })
-        return { status: 'committed', entityId: draft.checkin_id, delivery, savedAt }
+        return { status: 'committed', entityId: draft.checkin_id, delivery, savedAt, personalDelivery }
       },
     )
   } catch (error) {
@@ -502,7 +604,7 @@ export async function applyOutboxResult(
     serverReceiptId: string | null
   },
 ): Promise<'applied' | 'stale'> {
-  return database.transaction('rw', [database.outbox, database.receipts, database.localCheckins, database.localMeasurements, database.localAudit], async () => {
+  return database.transaction('rw', [database.outbox, database.receipts, database.localCheckins, database.localMeasurements, database.localReports, database.consentCache, database.localAudit], async () => {
     const current = await database.outbox.get(claimed.operation_id)
     if (!current || !sameOwner(current, scope) || current.lease_until !== claimed.lease_until) return 'stale'
     await database.outbox.put({
@@ -525,6 +627,22 @@ export async function applyOutboxResult(
       const measurement = await database.localMeasurements.get(claimed.entity_id)
       if (measurement && sameOwner(measurement, scope)) await database.localMeasurements.put({ ...measurement, delivery: 'accepted' })
     }
+    if (claimed.entity_type === 'report_bundle') {
+      const report = await database.localReports.get(claimed.entity_id)
+      if (report && sameOwner(report, scope)) {
+        const merged = mergeReportStatus('accepted', [])
+        await database.localReports.put({
+          ...report,
+          delivery: 'accepted',
+          doctor_work: report.doctor_work === 'not_opened' ? merged.doctorWork : report.doctor_work,
+          accepted_at: patch.nextAttemptAt,
+        })
+      }
+    }
+    if (claimed.entity_type === 'consent_change') {
+      const consent = await database.consentCache.get(claimed.entity_id)
+      if (consent && sameOwner(consent, scope)) await database.consentCache.put({ ...consent, applied_on_server: true })
+    }
     await writeAudit(database, scope, 'server_receipt', claimed.operation_id, claimed.entity_id, patch.nextAttemptAt)
     return 'applied'
   })
@@ -543,6 +661,279 @@ export async function commitSyncCursor(database: ArtemiaDb, scope: Scope, cursor
       await writeAudit(database, scope, 'pull_seen', null, eventId, recordedAt)
     }
   })
+}
+
+export async function readPersonalRevision(database: ArtemiaDb, scope: Scope, revisionId: string): Promise<LocalPersonalRevision | null> {
+  const rows = await database.localPersonalRevisions.where('[owner_id+environment_id]').equals([scope.ownerId, scope.environmentId]).toArray()
+  return rows.find((row) => row.general_revision_id === revisionId) ?? null
+}
+
+export async function listPersonalRevisions(database: ArtemiaDb, scope: Scope): Promise<LocalPersonalRevision[]> {
+  const rows = await database.localPersonalRevisions.where('[owner_id+environment_id]').equals([scope.ownerId, scope.environmentId]).toArray()
+  return rows.filter((row) => sameOwner(row, scope))
+}
+
+export async function latestConsent(database: ArtemiaDb, scope: Scope, consentScope: ConsentScope): Promise<LocalConsent | null> {
+  const rows = await database.consentCache.where('[owner_id+environment_id]').equals([scope.ownerId, scope.environmentId]).toArray()
+  const mine = rows.filter((row) => sameOwner(row, scope) && row.scope === consentScope)
+  mine.sort((left, right) => right.recorded_at.localeCompare(left.recorded_at))
+  return mine[0] ?? null
+}
+
+export async function queueConsentDecision(
+  database: ArtemiaDb,
+  scope: Scope,
+  input: {
+    consentId: string
+    operationId: string
+    missionId: string
+    consentScope: ConsentScope
+    decision: ConsentDecision
+    assignmentId: string | null
+    supersedesId: string | null
+    recordedAt: string
+  },
+): Promise<{ applyState: 'waiting_for_server' | 'applied' }> {
+  const savedAt = new Date().toISOString()
+  const payload = consentChangeSchema.parse({
+    id: input.consentId,
+    mission_id: input.missionId,
+    scope: input.consentScope,
+    decision: input.decision,
+    assignment_id: input.assignmentId,
+    supersedes_id: input.supersedesId,
+    recorded_at: input.recordedAt,
+    created_at_device: savedAt,
+  })
+  const payloadHash = await hashOperation({ schemaVersion: SCHEMA_VERSION, type: 'consent_change', payload })
+  await database.transaction('rw', [database.consentCache, database.outbox, database.receipts, database.localAudit], async () => {
+    const existing = await database.receipts.get(input.operationId)
+    if (existing && sameOwner(existing, scope)) return
+    const row: LocalConsent = {
+      id: input.consentId,
+      owner_id: scope.ownerId,
+      environment_id: scope.environmentId,
+      mission_id: input.missionId,
+      scope: input.consentScope,
+      decision: input.decision,
+      assignment_id: input.assignmentId,
+      supersedes_id: input.supersedesId,
+      recorded_at: input.recordedAt,
+      created_at_device: savedAt,
+      applied_on_server: false,
+      operation_id: input.operationId,
+    }
+    await database.consentCache.put(row)
+    await enqueue(database, {
+      operation_id: input.operationId,
+      owner_id: scope.ownerId,
+      environment_id: scope.environmentId,
+      entity_type: 'consent_change',
+      entity_id: input.consentId,
+      payload_version: 1,
+      frozen_payload: payload,
+      payload_hash: payloadHash,
+      dependencies: [],
+      state: 'pending',
+      attempts: 0,
+      next_attempt_at: savedAt,
+      last_error_code: null,
+      lease_until: null,
+      created_at: savedAt,
+    })
+    await database.receipts.put({
+      operation_id: input.operationId,
+      owner_id: scope.ownerId,
+      environment_id: scope.environmentId,
+      entity_type: 'consent_change',
+      entity_id: input.consentId,
+      payload_hash: payloadHash,
+      local_committed_at: savedAt,
+      server_receipt_id: null,
+    })
+    await writeAudit(database, scope, 'consent_queued', input.operationId, input.consentId, savedAt)
+  })
+  const stored = await database.consentCache.get(input.consentId)
+  return { applyState: stored?.applied_on_server ? 'applied' : 'waiting_for_server' }
+}
+
+export async function commitReport(
+  database: ArtemiaDb,
+  scope: Scope,
+  input: {
+    reportId: string
+    operationId: string
+    title: string
+    rangeStart: string
+    rangeEnd: string
+    reason: ReportReason
+    message: string | null
+    parentReportId: string | null
+    recipientAssignmentId: string | null
+    recipientLabel: string
+    snapshot: ReportSnapshot
+    send: boolean
+    checkinIds: string[]
+    personal: { payload: PersonalPayload; consentEventId: string } | null
+    dependencies: string[]
+  },
+): Promise<CommitStatus> {
+  const savedAt = new Date().toISOString()
+  const profile = await database.preparedProfiles.get([scope.ownerId, scope.environmentId])
+  if (!profile || profile.owner_id !== scope.ownerId) return { status: 'rejected', reason: 'profile_missing' }
+  const generalHash = await hashPayloadPart(input.snapshot)
+  const personalHash = input.personal ? await hashPayloadPart(input.personal.payload) : null
+  const canSend = input.send && input.recipientAssignmentId !== null
+  let frozen: unknown = null
+  let payloadHash: string | null = null
+  if (canSend && input.recipientAssignmentId) {
+    const parsed = reportBundleSchema.safeParse({
+      report: {
+        id: input.reportId,
+        mission_id: profile.mission_id,
+        recipient_assignment_id: input.recipientAssignmentId,
+        title: input.title,
+        range_start: input.rangeStart,
+        range_end: input.rangeEnd,
+        reason: input.reason,
+        general_snapshot: input.snapshot,
+        message: input.message,
+        parent_report_id: input.parentReportId,
+        device_id: profile.device_id,
+        recorded_at: savedAt,
+        created_at_device: savedAt,
+      },
+      personal: input.personal
+        ? { personal_snapshot: input.personal.payload, consent_event_id: input.personal.consentEventId }
+        : null,
+    })
+    if (!parsed.success) return { status: 'rejected', reason: 'invalid_report' }
+    frozen = parsed.data
+    payloadHash = await hashOperation({ schemaVersion: SCHEMA_VERSION, type: 'report_bundle', payload: parsed.data })
+  }
+  const delivery: LocalReport['delivery'] = canSend ? 'queued' : 'local_only'
+  return database.transaction(
+    'rw',
+    [database.localReports, database.localPersonalReports, database.outbox, database.receipts, database.localAudit],
+    async () => {
+      const existing = await database.receipts.get(input.operationId)
+      if (existing && !sameOwner(existing, scope)) return { status: 'conflict' }
+      if (existing) {
+        if (payloadHash && existing.payload_hash !== payloadHash) return { status: 'conflict' }
+        return { status: 'committed', entityId: existing.entity_id, delivery: canSend ? 'queued' : 'local_only', savedAt: existing.local_committed_at }
+      }
+      const report: LocalReport = {
+        id: input.reportId,
+        owner_id: scope.ownerId,
+        environment_id: scope.environmentId,
+        mission_id: profile.mission_id,
+        title: input.title,
+        range_start: input.rangeStart,
+        range_end: input.rangeEnd,
+        reason: input.reason,
+        message: input.message,
+        recipient_assignment_id: input.recipientAssignmentId,
+        recipient_label: input.recipientLabel,
+        general_snapshot: input.snapshot,
+        general_hash: generalHash,
+        parent_report_id: input.parentReportId,
+        readiness: 'finalized',
+        delivery,
+        doctor_work: 'not_opened',
+        operation_id: input.operationId,
+        created_at_device: savedAt,
+        accepted_at: null,
+        opened_at: null,
+        replied_at: null,
+        checkin_ids: input.checkinIds,
+      }
+      await database.localReports.put(report)
+      if (input.personal && personalHash) {
+        const part: LocalPersonalReport = {
+          id: input.reportId,
+          owner_id: scope.ownerId,
+          environment_id: scope.environmentId,
+          personal_snapshot: input.personal.payload,
+          personal_hash: personalHash,
+          consent_event_id: input.personal.consentEventId,
+          schema_version: 1,
+        }
+        await database.localPersonalReports.put(part)
+      }
+      if (canSend && frozen && payloadHash) {
+        await enqueue(database, {
+          operation_id: input.operationId,
+          owner_id: scope.ownerId,
+          environment_id: scope.environmentId,
+          entity_type: 'report_bundle',
+          entity_id: input.reportId,
+          payload_version: 1,
+          frozen_payload: frozen,
+          payload_hash: payloadHash,
+          dependencies: input.dependencies,
+          state: 'pending',
+          attempts: 0,
+          next_attempt_at: savedAt,
+          last_error_code: null,
+          lease_until: null,
+          created_at: savedAt,
+        })
+        await database.receipts.put({
+          operation_id: input.operationId,
+          owner_id: scope.ownerId,
+          environment_id: scope.environmentId,
+          entity_type: 'report_bundle',
+          entity_id: input.reportId,
+          payload_hash: payloadHash,
+          local_committed_at: savedAt,
+          server_receipt_id: null,
+        })
+      }
+      await writeAudit(database, scope, 'report_saved', input.operationId, input.reportId, savedAt)
+      return { status: 'committed', entityId: input.reportId, delivery, savedAt }
+    },
+  )
+}
+
+export async function listReports(database: ArtemiaDb, scope: Scope): Promise<LocalReport[]> {
+  const rows = await database.localReports.where('[owner_id+environment_id]').equals([scope.ownerId, scope.environmentId]).toArray()
+  return rows.filter((row) => sameOwner(row, scope)).sort((left, right) => right.created_at_device.localeCompare(left.created_at_device))
+}
+
+export async function readReport(database: ArtemiaDb, scope: Scope, reportId: string): Promise<LocalReport | null> {
+  const row = await database.localReports.get(reportId)
+  if (!row || !sameOwner(row, scope)) return null
+  return row
+}
+
+export async function readPersonalReport(database: ArtemiaDb, scope: Scope, reportId: string): Promise<LocalPersonalReport | null> {
+  const row = await database.localPersonalReports.get(reportId)
+  if (!row || !sameOwner(row, scope)) return null
+  return row
+}
+
+export async function saveReportStatus(database: ArtemiaDb, scope: Scope, report: LocalReport): Promise<void> {
+  if (!sameOwner(report, scope)) return
+  await database.localReports.put(report)
+}
+
+export async function listMessages(database: ArtemiaDb, scope: Scope, reportId: string): Promise<LocalMessage[]> {
+  const rows = await database.localMessages.where('[owner_id+environment_id]').equals([scope.ownerId, scope.environmentId]).toArray()
+  return rows.filter((row) => sameOwner(row, scope) && row.report_id === reportId)
+}
+
+export async function saveMessages(database: ArtemiaDb, scope: Scope, messages: LocalMessage[]): Promise<void> {
+  await database.transaction('rw', database.localMessages, async () => {
+    for (const message of messages) {
+      if (sameOwner(message, scope)) await database.localMessages.put(message)
+    }
+  })
+}
+
+export async function markMessageRead(database: ArtemiaDb, scope: Scope, messageId: string, readAt: string): Promise<void> {
+  const row = await database.localMessages.get(messageId)
+  if (!row || !sameOwner(row, scope)) return
+  await database.localMessages.put({ ...row, read_at: readAt })
 }
 
 function cursorId(scope: Scope): string {

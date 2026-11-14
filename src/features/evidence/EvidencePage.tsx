@@ -43,37 +43,6 @@ export function EvidencePage() {
   )
 }
 
-export function ReportsPage() {
-  const { locale } = useSession()
-  return (
-    <section>
-      <h1 className="text-3xl">{t(locale, 'reports')}</h1>
-      <p className="mt-3 text-muted">{t(locale, 'reportLater')}</p>
-    </section>
-  )
-}
-
-export function GroundHoldPage() {
-  const session = useSession()
-  return (
-    <main className="mx-auto flex max-w-xl flex-col gap-4 p-6">
-      <p className="text-sm text-attention">{t(session.locale, 'demo')}</p>
-      <h1 className="text-3xl">{t(session.locale, 'groundTitle')}</h1>
-      <p>{t(session.locale, 'groundBody')}</p>
-      <button
-        type="button"
-        className="min-h-11 text-left"
-        onClick={() => {
-          session.logout()
-          window.location.assign('/login')
-        }}
-      >
-        {t(session.locale, 'logout')}
-      </button>
-    </main>
-  )
-}
-
 export function NotFoundPage() {
   const { locale } = useSession()
   return (

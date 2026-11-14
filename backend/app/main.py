@@ -13,6 +13,7 @@ from app.config import get_settings
 from app.constants import MAX_BODY_BYTES
 from app.db import get_db
 from app.errors import ContractError, http_status_for
+from app.ground import crew_card, inbox, mark_opened, post_message, read_personal_report, read_report
 from app.models import (
     Account,
     Checkin,
@@ -34,7 +35,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
     allow_methods=["GET", "POST"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "Cache-Control"],
     allow_credentials=False,
 )
 
@@ -204,6 +205,101 @@ def read_personal(
             for part in parts
         ],
     }
+
+
+@app.get("/ground/inbox")
+def ground_inbox(account: Account = Depends(current_user), session: Session = Depends(get_db)) -> dict[str, object]:
+    body = inbox(session, account.id)
+    if body is None:
+        raise HTTPException(status_code=403, detail="forbidden")
+    return body
+
+
+@app.get("/ground/crew/{subject_id}")
+def ground_crew(
+    subject_id: UUID,
+    mission_id: UUID,
+    account: Account = Depends(current_user),
+    session: Session = Depends(get_db),
+) -> dict[str, object]:
+    try:
+        card = crew_card(session, account.id, mission_id, subject_id)
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail="forbidden") from error
+    if card is None:
+        raise HTTPException(status_code=404, detail="not_found")
+    return card
+
+
+@app.get("/missions/{mission_id}/reports/{report_id}")
+def report_card(
+    mission_id: UUID,
+    report_id: UUID,
+    account: Account = Depends(current_user),
+    session: Session = Depends(get_db),
+) -> dict[str, object]:
+    try:
+        body = read_report(session, account.id, mission_id, report_id)
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail="forbidden") from error
+    if body is None:
+        raise HTTPException(status_code=404, detail="not_found")
+    return body
+
+
+@app.get("/missions/{mission_id}/reports/{report_id}/personal")
+def report_personal(
+    mission_id: UUID,
+    report_id: UUID,
+    account: Account = Depends(current_user),
+    session: Session = Depends(get_db),
+) -> dict[str, object]:
+    try:
+        body = read_personal_report(session, account.id, mission_id, report_id)
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail="forbidden") from error
+    if body is None:
+        raise HTTPException(status_code=404, detail="not_found")
+    return body
+
+
+@app.post("/missions/{mission_id}/reports/{report_id}/opened")
+def report_opened(
+    mission_id: UUID,
+    report_id: UUID,
+    account: Account = Depends(current_user),
+    session: Session = Depends(get_db),
+) -> dict[str, object]:
+    try:
+        return mark_opened(session, account.id, mission_id, report_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail="not_found") from error
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail="forbidden") from error
+
+
+@app.post("/missions/{mission_id}/reports/{report_id}/messages")
+async def report_message(
+    mission_id: UUID,
+    report_id: UUID,
+    request: Request,
+    account: Account = Depends(current_user),
+    session: Session = Depends(get_db),
+) -> dict[str, object]:
+    try:
+        body = await request.json()
+    except json.JSONDecodeError as error:
+        raise HTTPException(status_code=422, detail="invalid_json") from error
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=422, detail="invalid_json")
+    try:
+        return post_message(session, account.id, mission_id, report_id, body)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail="not_found") from error
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail="forbidden") from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 @app.get("/missions/{mission_id}/measurements/{measurement_id}")

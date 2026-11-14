@@ -9,10 +9,17 @@ import type {
   SymptomCode,
 } from './enums.ts'
 import { generalPayloadSchema, type GeneralPayload } from './generalPayload.ts'
+import { buildPersonalPayload, emptyPersonalFields, type PersonalDraftFields } from './personalDraft.ts'
+import type { SharingMode } from './enums.ts'
 
 export const FUTURE_LIMIT_MS = 5 * 60 * 1000
 
-export type CheckinStep = 'general' | 'symptoms' | 'measurements' | 'review'
+export type CheckinStep = 'general' | 'symptoms' | 'personal' | 'measurements' | 'review'
+
+export function checkinSteps(personalEnabled: boolean): CheckinStep[] {
+  if (personalEnabled) return ['general', 'symptoms', 'personal', 'measurements', 'review']
+  return ['general', 'symptoms', 'measurements', 'review']
+}
 
 export type SymptomDraft = {
   code: SymptomCode
@@ -46,7 +53,7 @@ export type CheckinDraftValues = {
   symptoms: SymptomDraft[]
   reviewRequested: boolean | null
   measurementIds: string[]
-}
+} & PersonalDraftFields
 
 export type DraftIssue = { path: string; message: string }
 
@@ -63,7 +70,11 @@ export function emptySymptom(code: SymptomCode): SymptomDraft {
   }
 }
 
-export function emptyCheckinDraft(type: 'daily' | 'change', recordedAtLocal: string): CheckinDraftValues {
+export function emptyCheckinDraft(
+  type: 'daily' | 'change',
+  recordedAtLocal: string,
+  sharing: SharingMode = 'device_only',
+): CheckinDraftValues {
   return {
     recordedAtLocal,
     type,
@@ -85,6 +96,7 @@ export function emptyCheckinDraft(type: 'daily' | 'change', recordedAtLocal: str
     symptoms: [],
     reviewRequested: null,
     measurementIds: [],
+    ...emptyPersonalFields(sharing),
   }
 }
 
@@ -93,10 +105,16 @@ export function issuesForStep(
   values: CheckinDraftValues,
   timeZone: string,
   now: Date,
+  personalEnabled = false,
 ): DraftIssue[] {
   if (step === 'general') return generalIssues(values, timeZone, now)
   if (step === 'symptoms') return symptomIssues(values)
-  if (step === 'review') return buildGeneralPayload(values, timeZone, now).issues
+  if (step === 'personal') return buildPersonalPayload(values, personalEnabled).issues
+  if (step === 'review') {
+    const issues = buildGeneralPayload(values, timeZone, now).issues
+    if (personalEnabled) issues.push(...buildPersonalPayload(values, true).issues)
+    return issues
+  }
   return []
 }
 
@@ -151,6 +169,7 @@ export function payloadToDraft(payload: GeneralPayload, recordedAtLocal: string,
     })),
     reviewRequested: payload.review_requested,
     measurementIds: [],
+    ...emptyPersonalFields(),
   }
 }
 

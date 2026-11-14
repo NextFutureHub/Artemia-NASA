@@ -88,7 +88,19 @@ def test_direct_api_bypass_does_not_create_a_record(client):
 
     schema = client.get("/openapi.json").json()
     posts = sorted(path for path, methods in schema["paths"].items() if "post" in methods)
-    assert posts == ["/auth/login", "/operations"]
+    assert posts == [
+        "/auth/login",
+        "/missions/{mission_id}/reports/{report_id}/messages",
+        "/missions/{mission_id}/reports/{report_id}/opened",
+        "/operations",
+    ]
+    missed = client.post(
+        f"/missions/{MISSION_ID}/reports/10000000-0000-4000-8000-000000000099/opened",
+        headers=auth(mira),
+        json={"role": "doctor"},
+    )
+    assert missed.status_code in (403, 404)
+    assert count_rows(Checkin) == before
     assert all("receipt" not in path for path in schema["paths"])
 
 

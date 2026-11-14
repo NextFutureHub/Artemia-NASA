@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { useSession } from '../../app/session.tsx'
 import { Banner, Button, Field } from '../../components/ui.tsx'
 import { db } from '../../data/local/db.ts'
-import { clearOwner, updateProfile } from '../../data/local/journal.ts'
+import { clearOwner, latestConsent, queueConsentDecision, updateProfile } from '../../data/local/journal.ts'
+import { consentApplyState } from '../../domain/reportSnapshot.ts'
 import { environmentId } from '../../data/remote/client.ts'
 import { formatZoned } from '../../domain/clock.ts'
 import { t } from '../../i18n/copy.ts'
@@ -20,6 +21,7 @@ export function ProfilePage() {
   const [sensitive, setSensitive] = useState(profile?.sensitive_sharing ?? 'device_only')
   const [message, setMessage] = useState('')
   const [phrase, setPhrase] = useState('')
+  const [consentNote, setConsentNote] = useState('')
 
   if (!profile || !session.mission) return null
   const current = profile
@@ -84,6 +86,29 @@ export function ProfilePage() {
           {t(locale, 'exchange')}
         </label>
         <Button onClick={() => void save()}>{t(locale, 'saveSettings')}</Button>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => {
+            if (!session.assignment?.assignment_id) return
+            void latestConsent(db, { ownerId: current.owner_id, environmentId }, 'personal_sharing').then(async (previous) => {
+              const result = await queueConsentDecision(db, { ownerId: current.owner_id, environmentId }, {
+                consentId: crypto.randomUUID(),
+                operationId: crypto.randomUUID(),
+                missionId: current.mission_id,
+                consentScope: 'personal_sharing',
+                decision: 'revoked',
+                assignmentId: session.assignment?.assignment_id ?? null,
+                supersedesId: previous?.id ?? null,
+                recordedAt: new Date().toISOString(),
+              })
+              setConsentNote(t(locale, consentApplyState(result.applyState === 'applied') === 'applied' ? 'consentApplied' : 'consentWaiting'))
+            })
+          }}
+        >
+          {t(locale, 'revokePersonal')}
+        </Button>
+        {consentNote ? <Banner tone="attention">{consentNote}</Banner> : null}
         {message ? <Banner tone="neutral">{message}</Banner> : null}
       </section>
       <section className="flex flex-col gap-3 rounded-xl border border-line p-4">

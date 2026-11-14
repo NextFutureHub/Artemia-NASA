@@ -1,11 +1,17 @@
 import type { GeneralPayload } from '../../domain/generalPayload.ts'
+import type { PersonalPayload } from '../../domain/personalPayload.ts'
 import type { CheckinDraftValues, CheckinStep } from '../../domain/checkinDraft.ts'
+import type { DoctorWork, ReportDelivery, ReportSnapshot } from '../../domain/reportSnapshot.ts'
 import type {
+  ConsentDecision,
+  ConsentScope,
   MeasurementContext,
   MeasurementQuality,
   MeasurementSource,
   Metric,
   OperationType,
+  ReportReason,
+  SharingMode,
 } from '../../domain/enums.ts'
 
 export type Scope = { ownerId: string; environmentId: string }
@@ -195,6 +201,83 @@ export type LocalReceipt = {
   payload_hash: string
   local_committed_at: string
   server_receipt_id: string | null
+}
+
+export type LocalPersonalRevision = {
+  id: string
+  owner_id: string
+  environment_id: string
+  checkin_id: string
+  general_revision_id: string
+  personal_payload: PersonalPayload
+  payload_hash: string
+  sharing: SharingMode
+  consent_event_id: string | null
+  included_in_outbox: boolean
+  schema_version: 1
+}
+
+export type LocalConsent = {
+  id: string
+  owner_id: string
+  environment_id: string
+  mission_id: string
+  scope: ConsentScope
+  decision: ConsentDecision
+  assignment_id: string | null
+  supersedes_id: string | null
+  recorded_at: string
+  created_at_device: string
+  applied_on_server: boolean
+  operation_id: string
+}
+
+export type LocalReport = {
+  id: string
+  owner_id: string
+  environment_id: string
+  mission_id: string
+  title: string
+  range_start: string
+  range_end: string
+  reason: ReportReason
+  message: string | null
+  recipient_assignment_id: string | null
+  recipient_label: string
+  general_snapshot: ReportSnapshot
+  general_hash: string
+  parent_report_id: string | null
+  readiness: 'finalized'
+  delivery: ReportDelivery
+  doctor_work: DoctorWork
+  operation_id: string
+  created_at_device: string
+  accepted_at: string | null
+  opened_at: string | null
+  replied_at: string | null
+  checkin_ids: string[]
+}
+
+export type LocalPersonalReport = {
+  id: string
+  owner_id: string
+  environment_id: string
+  personal_snapshot: PersonalPayload
+  personal_hash: string
+  consent_event_id: string
+  schema_version: 1
+}
+
+export type LocalMessage = {
+  id: string
+  owner_id: string
+  environment_id: string
+  report_id: string
+  message_type: string
+  text: string
+  sensitive: boolean
+  created_at: string
+  read_at: string | null
 }
 
 export type LocalAudit = {

@@ -31,7 +31,7 @@ export async function runDelivery(input: DeliveryClock): Promise<void> {
         skip: [...deferred],
       })
       if (!claimed) break
-      if (holdsPersonal(claimed.frozen_payload)) {
+      if (personalSendBlocked(claimed.frozen_payload)) {
         await applyOutboxResult(input.database, input.scope, claimed, {
           state: 'blocked_permission',
           attempts: claimed.attempts,
@@ -134,10 +134,34 @@ async function pullOwnChanges(input: DeliveryClock, token: string): Promise<void
   await commitSyncCursor(input.database, input.scope, body.next_cursor, ids, input.now())
 }
 
-function holdsPersonal(payload: unknown): boolean {
+const SENSITIVE_KEYS = new Set([
+  'bleeding_category',
+  'bleeding_intensity',
+  'cycle_context',
+  'discomfort_score',
+  'personal_payload',
+  'personal_snapshot',
+])
+
+/** A consented personal part may travel. A leak into the general snapshot may not. */
+export function personalSendBlocked(payload: unknown): boolean {
   if (!payload || typeof payload !== 'object') return false
-  const personal = (payload as { personal?: unknown }).personal
-  return personal !== null && personal !== undefined
+  const body = payload as {
+    personal?: unknown
+    revision?: { general_payload?: unknown }
+    report?: { general_snapshot?: unknown }
+  }
+  if (hasSensitiveKey(body.revision?.general_payload) || hasSensitiveKey(body.report?.general_snapshot)) return true
+  if (body.personal == null) return false
+  if (typeof body.personal !== 'object') return true
+  const consent = (body.personal as { consent_event_id?: unknown }).consent_event_id
+  return typeof consent !== 'string' || consent.length === 0
+}
+
+function hasSensitiveKey(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false
+  if (Array.isArray(value)) return value.some((item) => hasSensitiveKey(item))
+  return Object.entries(value).some(([key, nested]) => SENSITIVE_KEYS.has(key) || hasSensitiveKey(nested))
 }
 
 async function withOwnerLock(ownerId: string, work: () => Promise<void>): Promise<void> {

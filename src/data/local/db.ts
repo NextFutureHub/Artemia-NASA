@@ -4,9 +4,14 @@ import type {
   DraftRecord,
   LocalAudit,
   LocalCheckin,
+  LocalConsent,
   LocalLink,
   LocalMeasurement,
+  LocalMessage,
+  LocalPersonalReport,
+  LocalPersonalRevision,
   LocalReceipt,
+  LocalReport,
   LocalRevision,
   MissionCache,
   OutboxItem,
@@ -20,18 +25,18 @@ export class ArtemiaDb extends Dexie {
   preparedProfiles!: Table<PreparedProfile, [string, string]>
   missionCache!: Table<MissionCache, [string, string, string]>
   assignmentCache!: Table<AssignmentCache, [string, string]>
-  consentCache!: Table<OwnedRow & { id: string }, string>
+  consentCache!: Table<LocalConsent, string>
   sourceCache!: Table<SourceCache, [string, string, string]>
   ruleCache!: Table<RuleCache, [string, string, string]>
   drafts!: Table<DraftRecord, string>
   localCheckins!: Table<LocalCheckin, string>
   localCheckinRevisions!: Table<LocalRevision, string>
-  localPersonalRevisions!: Table<OwnedRow & { id: string }, string>
+  localPersonalRevisions!: Table<LocalPersonalRevision, string>
   localMeasurements!: Table<LocalMeasurement, string>
   localCheckinMeasurements!: Table<LocalLink, [string, string, string, string]>
-  localReports!: Table<OwnedRow & { id: string }, string>
-  localPersonalReports!: Table<OwnedRow & { id: string }, string>
-  localMessages!: Table<OwnedRow & { id: string }, string>
+  localReports!: Table<LocalReport, string>
+  localPersonalReports!: Table<LocalPersonalReport, string>
+  localMessages!: Table<LocalMessage, string>
   outbox!: Table<OutboxItem, string>
   receipts!: Table<LocalReceipt, string>
   syncCursors!: Table<OwnedRow & { id: string; scope: string }, string>
