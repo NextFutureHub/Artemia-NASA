@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useSession } from '../../app/session.tsx'
 import { Banner, Button, Field } from '../../components/ui.tsx'
-import { dateToZonedInput, zonedInputToDate } from '../../domain/clock.ts'
+import { dateToZonedInput, formatZoned, zonedInputToDate } from '../../domain/clock.ts'
+import { metricLabel, qualityLabel, sourceLabel } from '../../domain/labels.ts'
 import { inspectManualMeasurement, type ManualMeasurementDraft } from '../../domain/manualMeasurement.ts'
 import type { Metric } from '../../domain/enums.ts'
 import { db } from '../../data/local/db.ts'
@@ -173,10 +174,20 @@ export function MeasurementsPage() {
           {rows.map((row) => (
             <li key={row.id} className="rounded-xl border border-line p-3">
               <p className="numeric">
-                {row.metric} {row.value ?? '—'} {row.unit}
+                {metricLabel(locale, row.metric)} {row.value ?? '—'} {row.unit}
               </p>
               <p className="text-sm text-muted">
-                {row.source} · {row.quality} · {row.delivery === 'accepted' ? t(locale, 'receivedByServer') : row.delivery === 'on_server' ? t(locale, 'sourceServer') : row.delivery === 'queued' ? t(locale, 'waitingSend') : t(locale, 'storedLocally')}
+                {sourceLabel(locale, row.source)} · {qualityLabel(locale, row.quality)} ·{' '}
+                {row.delivery === 'accepted'
+                  ? t(locale, 'receivedByServer')
+                  : row.delivery === 'on_server'
+                    ? t(locale, 'sourceServer')
+                    : row.delivery === 'queued'
+                      ? t(locale, 'waitingSend')
+                      : t(locale, 'storedLocally')}
+              </p>
+              <p className="numeric mt-1 text-sm text-muted">
+                {formatZoned(new Date(row.recorded_at), profile.timezone, locale === 'ru' ? 'ru' : 'en')}
               </p>
             </li>
           ))}

@@ -51,6 +51,14 @@ export function formatZoned(value: Date, timeZone: string, locale: string): stri
   return `${formatted} ${timeZone}`
 }
 
+/** Wall-clock UTC for the mission header. Uses the instant, not a mission-local calendar. */
+export function formatUtcClock(value: Date): string {
+  const hours = String(value.getUTCHours()).padStart(2, '0')
+  const minutes = String(value.getUTCMinutes()).padStart(2, '0')
+  const seconds = String(value.getUTCSeconds()).padStart(2, '0')
+  return `${hours}:${minutes}:${seconds} UTC`
+}
+
 function zoneParts(value: Date, timeZone: string): Record<string, string> {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone,

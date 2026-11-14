@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { missionDay } from '../../domain/clock.ts'
+import { formatUtcClock, missionDay } from '../../domain/clock.ts'
 import { db } from '../../data/local/db.ts'
 import { clearOwner } from '../../data/local/journal.ts'
 import { environmentId } from '../../data/remote/client.ts'
@@ -14,8 +14,9 @@ export function OnboardShell() {
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [signOutOpen, setSignOutOpen] = useState(false)
+  const [now, setNow] = useState(() => new Date())
   const locale = session.locale
-  const day = session.mission ? missionDay(new Date(session.mission.start_at), new Date()) : null
+  const day = session.mission ? missionDay(new Date(session.mission.start_at), now) : null
   const dayText =
     day?.phase === 'in_mission'
       ? t(locale, 'missionDay', { day: day.day })
@@ -28,6 +29,11 @@ export function OnboardShell() {
     offline: t(locale, 'serverDown'),
     auth_required: t(locale, 'authRequired'),
   }[session.connection]
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 1000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     const profile = session.profile
@@ -79,7 +85,10 @@ export function OnboardShell() {
           </Button>
           <div className="min-w-0 flex-1">
             <p className="truncate">{session.mission?.name}</p>
-            <p className="numeric text-sm text-muted">{dayText} · UTC</p>
+            <p className="numeric text-sm text-muted">
+              {dayText ? `${dayText} · ` : ''}
+              {formatUtcClock(now)}
+            </p>
           </div>
           <button type="button" className="min-h-11 text-left text-sm" onClick={() => navigate('/onboard/sync')}>
             <StatusMark state={session.connection} /> {connectionText}

@@ -1,27 +1,32 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useSession } from '../../app/session.tsx'
 import { AppDialog, Button, Card } from '../../components/ui.tsx'
 import { formatZoned, localDateInZone } from '../../domain/clock.ts'
 import { explanationCard, type RuleId } from '../../domain/explanations.ts'
 import type { GeneralPayload } from '../../domain/generalPayload.ts'
+import { feedEventLabel, metricLabel, qualityLabel, sourceLabel } from '../../domain/labels.ts'
 import { db } from '../../data/local/db.ts'
-import { hiddenObservationIds, hideObservation, listAudit, listCheckins, listMeasurements, readActiveDraft, readRevisions } from '../../data/local/journal.ts'
+import { hiddenObservationIds, hideObservation, listCheckins, listMeasurements, listReports, readActiveDraft, readRevisions } from '../../data/local/journal.ts'
 import { environmentId } from '../../data/remote/client.ts'
 import { t } from '../../i18n/copy.ts'
-import type { DraftRecord, LocalAudit, LocalCheckin, LocalMeasurement } from '../../data/local/types.ts'
+import type { DraftRecord, LocalCheckin, LocalMeasurement, LocalMessage, LocalReport } from '../../data/local/types.ts'
 
 const STALE_MS = 12 * 60 * 60 * 1000
 
+type FeedItem = { id: string; at: string; code: string; href: string }
+
 export function TodayPage() {
   const session = useSession()
+  const navigate = useNavigate()
   const locale = session.locale
   const profile = session.profile
   const [checkins, setCheckins] = useState<LocalCheckin[]>([])
   const [measurements, setMeasurements] = useState<LocalMeasurement[]>([])
+  const [reports, setReports] = useState<LocalReport[]>([])
+  const [messages, setMessages] = useState<LocalMessage[]>([])
   const [draft, setDraft] = useState<DraftRecord | null>(null)
   const [hidden, setHidden] = useState<Set<string>>(new Set())
-  const [events, setEvents] = useState<LocalAudit[]>([])
   const [payload, setPayload] = useState<GeneralPayload | null>(null)
   const [openedAt] = useState(() => new Date())
   const [contact, setContact] = useState(false)
@@ -33,9 +38,12 @@ export function TodayPage() {
     const scope = { ownerId: profile.owner_id, environmentId }
     void listCheckins(db, scope).then(setCheckins)
     void listMeasurements(db, scope).then(setMeasurements)
+    void listReports(db, scope).then(setReports)
     void readActiveDraft(db, scope).then(setDraft)
     void hiddenObservationIds(db, scope).then(setHidden)
-    void listAudit(db, scope).then((rows) => setEvents(rows.slice(0, 5)))
+    void db.localMessages.where('[owner_id+environment_id]').equals([profile.owner_id, environmentId]).toArray().then((rows) => {
+      setMessages(rows.filter((row) => row.owner_id === profile.owner_id && row.environment_id === environmentId))
+    })
   }, [profile?.owner_id, session.pending])
 
   const today = profile ? localDateInZone(openedAt, profile.timezone) : ''
@@ -55,6 +63,16 @@ export function TodayPage() {
   const failedMeasurement = measurements.some((item) => item.quality === 'invalid' || item.quality === 'insufficient')
   const hints = buildHints(payload, attached, hidden, completed?.id, session.connection === 'auth_required', failedMeasurement)
   const procedureText = session.mission?.emergency_contact_text.trim() ?? ''
+  const doctorMessages = messages
+    .filter((row) => row.message_type !== 'crew_note')
+    .sort((left, right) => right.created_at.localeCompare(left.created_at))
+  const latestReply = doctorMessages[0] ?? null
+  const repliedReport =
+    reports
+      .filter((row) => row.replied_at || row.doctor_work === 'replied')
+      .sort((left, right) => (right.replied_at ?? right.created_at_device).localeCompare(left.replied_at ?? left.created_at_device))[0] ?? null
+  const doctorHref = latestReply ? `/onboard/reports/${latestReply.report_id}` : repliedReport ? `/onboard/reports/${repliedReport.id}` : null
+  const feed = buildFeed(checkins, measurements, reports, doctorMessages).slice(0, 5)
 
   return (
     <div className="flex flex-col gap-4">
@@ -90,10 +108,16 @@ export function TodayPage() {
       </Card>
       <Card title={t(locale, 'lastMeasurement')} action={<Link className="inline-flex min-h-11 items-center" to="/onboard/measurements">{t(locale, 'measure')}</Link>}>
         {latest ? (
-          <p className="numeric">
-            {stale ? t(locale, 'ago', { time: elapsed(locale, latest.recorded_at) }) : null} {latest.metric} {latest.value ?? '—'} {latest.unit} · {latest.source} · {latest.quality}
-            <span className="mt-1 block text-sm text-muted">{formatZoned(new Date(latest.recorded_at), profile.timezone, locale === 'ru' ? 'ru' : 'en')}</span>
-          </p>
+          <div className="numeric">
+            <p>
+              {stale ? `${t(locale, 'ago', { time: elapsed(locale, latest.recorded_at) })} · ` : null}
+              {metricLabel(locale, latest.metric)} {latest.value ?? '—'} {latest.unit}
+            </p>
+            <p className="mt-1 text-sm text-muted">
+              {sourceLabel(locale, latest.source)} · {qualityLabel(locale, latest.quality)} · {stale ? t(locale, 'measurementStale') : t(locale, 'measurementCurrent')}
+            </p>
+            <p className="mt-1 text-sm text-muted">{formatZoned(new Date(latest.recorded_at), profile.timezone, locale === 'ru' ? 'ru' : 'en')}</p>
+          </div>
         ) : (
           <p>{t(locale, 'noMeasurement')}</p>
         )}
@@ -124,23 +148,60 @@ export function TodayPage() {
           ))}
         </ul>
       </Card>
-      <Card title={t(locale, 'doctorCard')}>
-        <p>{t(locale, 'noReply')}</p>
-        <p>{t(locale, 'pendingOps', { count: session.pending })}</p>
+      <Card
+        title={t(locale, 'doctorCard')}
+        action={
+          doctorHref ? (
+            <Link className="inline-flex min-h-11 items-center text-accent" to={doctorHref}>
+              {t(locale, 'openReply')}
+            </Link>
+          ) : null
+        }
+      >
+        {latestReply ? (
+          <div>
+            <p className="text-sm text-muted">{t(locale, 'latestReply')}</p>
+            <p>{latestReply.text}</p>
+            <p className="numeric mt-1 text-sm text-muted">
+              {formatZoned(new Date(latestReply.created_at), profile.timezone, locale === 'ru' ? 'ru' : 'en')}
+            </p>
+          </div>
+        ) : repliedReport?.replied_at ? (
+          <div>
+            <p>{t(locale, 'feedDoctorReplied')}</p>
+            <p className="numeric mt-1 text-sm text-muted">
+              {formatZoned(new Date(repliedReport.replied_at), profile.timezone, locale === 'ru' ? 'ru' : 'en')}
+            </p>
+          </div>
+        ) : (
+          <p>{t(locale, 'noReply')}</p>
+        )}
+        <p className="mt-2">{t(locale, 'pendingOps', { count: session.pending })}</p>
       </Card>
       <Card title={t(locale, 'feed')}>
-        {events.length === 0 ? <p>{t(locale, 'noEvents')}</p> : null}
+        {feed.length === 0 ? <p>{t(locale, 'noEvents')}</p> : null}
         <ul>
-          {events.map((event) => (
-            <li key={event.id} className="numeric min-h-11">
-              {event.event_code} · {formatZoned(new Date(event.recorded_at), profile.timezone, locale === 'ru' ? 'ru' : 'en')}
+          {feed.map((event) => (
+            <li key={event.id} className="min-h-11">
+              <Link className="inline-flex min-h-11 items-center gap-2" to={event.href}>
+                <span>{feedEventLabel(locale, event.code)}</span>
+                <span className="numeric text-sm text-muted">
+                  {formatZoned(new Date(event.at), profile.timezone, locale === 'ru' ? 'ru' : 'en')}
+                </span>
+              </Link>
             </li>
           ))}
         </ul>
       </Card>
       <Button onClick={() => setContact(true)}>{t(locale, 'contact')}</Button>
       <AppDialog open={contact} onOpenChange={setContact} title={t(locale, 'contact')} description={t(locale, 'noEmergencyPromise')}>
-        <Button variant="secondary" disabled>
+        <Button
+          variant="secondary"
+          onClick={() => {
+            setContact(false)
+            navigate('/onboard/reports/new?reason=reply_to_doctor')
+          }}
+        >
           {t(locale, 'prepareMessage')}
         </Button>
         <Button
@@ -174,6 +235,35 @@ export function TodayPage() {
       </AppDialog>
     </div>
   )
+}
+
+function buildFeed(
+  checkins: LocalCheckin[],
+  measurements: LocalMeasurement[],
+  reports: LocalReport[],
+  messages: LocalMessage[],
+): FeedItem[] {
+  const items: FeedItem[] = []
+  for (const row of checkins) {
+    items.push({ id: `checkin-${row.id}`, at: row.recorded_at, code: 'checkin_saved', href: `/onboard/checkin/${row.id}` })
+  }
+  for (const row of measurements) {
+    items.push({ id: `measurement-${row.id}`, at: row.recorded_at, code: 'measurement_saved', href: '/onboard/measurements' })
+  }
+  for (const row of reports) {
+    items.push({ id: `report-${row.id}`, at: row.created_at_device, code: 'report_saved', href: `/onboard/reports/${row.id}` })
+    if (row.accepted_at) {
+      items.push({ id: `accepted-${row.id}`, at: row.accepted_at, code: 'delivery_confirmed', href: `/onboard/reports/${row.id}` })
+    }
+    if (row.opened_at) {
+      items.push({ id: `opened-${row.id}`, at: row.opened_at, code: 'doctor_opened', href: `/onboard/reports/${row.id}` })
+    }
+  }
+  for (const row of messages) {
+    if (row.message_type === 'crew_note') continue
+    items.push({ id: `reply-${row.id}`, at: row.created_at, code: 'doctor_replied', href: `/onboard/reports/${row.report_id}` })
+  }
+  return items.sort((left, right) => right.at.localeCompare(left.at))
 }
 
 function buildHints(

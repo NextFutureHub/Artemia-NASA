@@ -20,6 +20,7 @@ import {
 import { apiRequest, environmentId } from '../../data/remote/client.ts'
 import { localDateInZone } from '../../domain/clock.ts'
 import type { ReportReason } from '../../domain/enums.ts'
+import { metricLabel, qualityLabel, sourceLabel } from '../../domain/labels.ts'
 import { buildReportSnapshot, mergeReportStatus, reportReasonLabel } from '../../domain/reportSnapshot.ts'
 import { label, t } from '../../i18n/copy.ts'
 import type { LocalCheckin, LocalMeasurement, LocalMessage, LocalPersonalRevision, LocalReport, LocalRevision } from '../../data/local/types.ts'
@@ -86,7 +87,10 @@ export function ReportEditorPage() {
   const [personal, setPersonal] = useState<LocalPersonalRevision[]>([])
   const [selectedCheckins, setSelectedCheckins] = useState<string[]>([])
   const [selectedMeasurements, setSelectedMeasurements] = useState<string[]>([])
-  const [reason, setReason] = useState<ReportReason>('planned')
+  const [reason, setReason] = useState<ReportReason>(() => {
+    const value = params.get('reason')
+    return value === 'review_request' || value === 'reply_to_doctor' || value === 'planned' ? value : 'planned'
+  })
   const [message, setMessage] = useState('')
   const [includePersonal, setIncludePersonal] = useState(false)
   const [range, setRange] = useState<'today' | 'week' | 'custom'>('today')
@@ -245,7 +249,9 @@ export function ReportEditorPage() {
               checked={selectedMeasurements.includes(row.id)}
               onChange={(event) => setSelectedMeasurements((current) => event.target.checked ? [...current, row.id] : current.filter((id) => id !== row.id))}
             />
-            <span>{row.metric} · {row.value ?? '—'} · {row.quality} · {row.source}</span>
+            <span>
+              {metricLabel(locale, row.metric)} · {row.value ?? '—'} · {qualityLabel(locale, row.quality)} · {sourceLabel(locale, row.source)}
+            </span>
           </label>
         ))}
       </fieldset>

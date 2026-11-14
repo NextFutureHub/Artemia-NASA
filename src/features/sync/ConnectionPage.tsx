@@ -6,6 +6,7 @@ import { db } from '../../data/local/db.ts'
 import { listOutbox, requestRetry } from '../../data/local/journal.ts'
 import { environmentId } from '../../data/remote/client.ts'
 import { formatZoned } from '../../domain/clock.ts'
+import { outboxEntityLabel, outboxStateLabel } from '../../domain/labels.ts'
 import { browserDelivery } from '../../services/delivery.ts'
 import { t } from '../../i18n/copy.ts'
 import type { OutboxItem } from '../../data/local/types.ts'
@@ -68,39 +69,53 @@ export function ConnectionPage() {
         <Button className="mt-3" disabled={busy || !profile || mismatch} onClick={() => void synchronize()}>
           {t(locale, 'syncNow')}
         </Button>
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr>
-                <th>{t(locale, 'recordType')}</th>
-                <th>{t(locale, 'created')}</th>
-                <th>{t(locale, 'state')}</th>
-                <th>{t(locale, 'attempts')}</th>
-                <th>{t(locale, 'nextTry')}</th>
-                <th>{t(locale, 'lastError')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map((row) => (
-                <tr key={row.operation_id} className="border-t border-line">
-                  <td className="py-2">{row.entity_type === 'checkin_bundle' || row.entity_type === 'measurement' ? row.entity_type : t(locale, 'protectedPart')}</td>
-                  <td className="numeric">{row.created_at}</td>
-                  <td>{row.state}</td>
-                  <td className="numeric">{row.attempts}</td>
-                  <td className="numeric">{row.next_attempt_at}</td>
-                  <td>{row.last_error_code ?? ''}</td>
-                  <td>
-                    {row.state === 'retry_wait' || row.state === 'blocked_auth' ? (
-                      <Button variant="quiet" onClick={() => void synchronize(row.operation_id)}>{t(locale, 'retry')}</Button>
-                    ) : null}
-                    {row.last_error_code ? <Button variant="quiet" onClick={() => setReason(row.last_error_code)}>{t(locale, 'showReason')}</Button> : null}
-                    {row.state === 'conflict' ? <p>{t(locale, 'conflictKept')}</p> : null}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ul className="mt-4 flex flex-col gap-3">
+          {visible.map((row) => (
+            <li key={row.operation_id} className="rounded-xl border border-line p-3">
+              <p>{outboxEntityLabel(locale, row.entity_type)}</p>
+              <p className="mt-1 text-sm">{outboxStateLabel(locale, row.state)}</p>
+              <dl className="mt-2 grid gap-1 text-sm text-muted sm:grid-cols-2">
+                <div>
+                  <dt>{t(locale, 'created')}</dt>
+                  <dd className="numeric">
+                    {profile ? formatZoned(new Date(row.created_at), profile.timezone, locale === 'ru' ? 'ru' : 'en') : row.created_at}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t(locale, 'attempts')}</dt>
+                  <dd className="numeric">{row.attempts}</dd>
+                </div>
+                <div>
+                  <dt>{t(locale, 'nextTry')}</dt>
+                  <dd className="numeric">
+                    {profile
+                      ? formatZoned(new Date(row.next_attempt_at), profile.timezone, locale === 'ru' ? 'ru' : 'en')
+                      : row.next_attempt_at}
+                  </dd>
+                </div>
+                {row.last_error_code ? (
+                  <div>
+                    <dt>{t(locale, 'lastError')}</dt>
+                    <dd>{row.last_error_code}</dd>
+                  </div>
+                ) : null}
+              </dl>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {row.state === 'retry_wait' || row.state === 'blocked_auth' ? (
+                  <Button variant="quiet" onClick={() => void synchronize(row.operation_id)}>
+                    {t(locale, 'retry')}
+                  </Button>
+                ) : null}
+                {row.last_error_code ? (
+                  <Button variant="quiet" onClick={() => setReason(row.last_error_code)}>
+                    {t(locale, 'showReason')}
+                  </Button>
+                ) : null}
+              </div>
+              {row.state === 'conflict' ? <p className="mt-2 text-sm">{t(locale, 'conflictKept')}</p> : null}
+            </li>
+          ))}
+        </ul>
       </section>
       {session.connection === 'offline' ? <Banner tone="attention">{t(locale, 'serverDown')}</Banner> : null}
       <AppDialog open={reason !== null} title={t(locale, 'showReason')} description={reason ?? ''} onOpenChange={(open) => { if (!open) setReason(null) }}>

@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { qualityLabel, sourceLabel } from '../../domain/labels.ts'
 import { comparisonText, lineSegments, type TrendSeries } from '../../domain/trends.ts'
 import { t, type Locale } from '../../i18n/copy.ts'
 
@@ -49,31 +50,18 @@ export function TrendChart({ series, locale }: { series: TrendSeries; locale: Lo
         {plotted.map((point) => (
           <li key={point.at}>
             <Link className="inline-flex min-h-11 items-center" to={point.href}>
-              {point.date} · {point.value} {unit} · {t(locale, sourceKey(point.source))} · {t(locale, qualityKey(point.quality))}
+              {point.date} · {point.value} {unit} · {sourceLabel(locale, point.source)} · {qualityLabel(locale, point.quality)}
             </Link>
           </li>
         ))}
         {excluded.map((point) => (
           <li key={`${point.at}-out`} className="text-sm text-muted">
-            {point.date} · {t(locale, 'excludedPoint')} · {t(locale, qualityKey(point.quality))}
+            {point.date} · {t(locale, 'excludedPoint')} · {qualityLabel(locale, point.quality)}
           </li>
         ))}
       </ul>
     </article>
   )
-}
-
-function sourceKey(source: 'manual' | 'usb' | 'simulated') {
-  if (source === 'usb') return 'sourceDevice' as const
-  if (source === 'simulated') return 'sourceSimulated' as const
-  return 'sourceManual' as const
-}
-
-function qualityKey(quality: 'unknown' | 'valid' | 'invalid' | 'insufficient') {
-  if (quality === 'invalid') return 'qualityInvalid' as const
-  if (quality === 'insufficient') return 'qualityInsufficient' as const
-  if (quality === 'valid') return 'qualityValid' as const
-  return 'qualityUnknown' as const
 }
 
 function xOf(date: string, series: TrendSeries): number {
