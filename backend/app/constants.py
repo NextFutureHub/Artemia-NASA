@@ -7,7 +7,16 @@ OPERATION_TYPES = (
     "invalidation",
     "profile_preferences",
     "consent_change",
+    "care_order_response",
 )
+CARE_ORDER_KINDS = (
+    "examination",
+    "measurement",
+    "recommendation",
+    "symptom_monitor",
+    "follow_up",
+)
+CARE_ORDER_DECISIONS = ("done", "skipped", "acknowledged")
 
 MAX_BODY_BYTES = 256 * 1024
 

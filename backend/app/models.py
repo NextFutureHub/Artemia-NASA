@@ -607,6 +607,106 @@ class OperationalStatus(Base):
     published_at: Mapped[datetime] = mapped_column(timestamptz, server_default=text("now()"))
 
 
+class CareOrder(Base):
+    """Physician care task. Not a prescription and not a clinical decision support output."""
+
+    __tablename__ = "care_orders"
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    mission_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), ForeignKey("missions.id", ondelete="RESTRICT"))
+    subject_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), ForeignKey("profiles.id", ondelete="RESTRICT"))
+    assignment_id: Mapped[UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("medical_assignments.id", ondelete="RESTRICT")
+    )
+    doctor_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), ForeignKey("profiles.id", ondelete="RESTRICT"))
+    kind: Mapped[str] = mapped_column(Text)
+    title: Mapped[str] = mapped_column(Text)
+    instructions: Mapped[str] = mapped_column(Text)
+    schedule_text: Mapped[str] = mapped_column(Text, server_default=text("''"))
+    due_at: Mapped[datetime | None] = mapped_column(timestamptz)
+    status: Mapped[str] = mapped_column(Text, server_default=text("'active'"))
+    revision_no: Mapped[int] = mapped_column(Integer, server_default=text("1"))
+    parent_order_id: Mapped[UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("care_orders.id", ondelete="RESTRICT")
+    )
+    cancelled_reason: Mapped[str | None] = mapped_column(Text)
+    revise_reason: Mapped[str | None] = mapped_column(Text)
+    ack_required: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    acknowledged_at: Mapped[datetime | None] = mapped_column(timestamptz)
+    schema_version: Mapped[int] = mapped_column(Integer, server_default=text("1"))
+    created_at: Mapped[datetime] = mapped_column(timestamptz, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(timestamptz, server_default=text("now()"))
+
+    __table_args__ = (
+        CheckConstraint(
+            "kind in ('examination', 'measurement', 'recommendation', 'symptom_monitor', 'follow_up')",
+            name="care_order_kind_values",
+        ),
+        CheckConstraint("status in ('active', 'cancelled', 'completed')", name="care_order_status_values"),
+        CheckConstraint("char_length(title) between 1 and 120", name="care_order_title_length"),
+        CheckConstraint("char_length(instructions) between 1 and 3000", name="care_order_instructions_length"),
+        CheckConstraint("char_length(schedule_text) <= 500", name="care_order_schedule_length"),
+        CheckConstraint(
+            "cancelled_reason is null or char_length(cancelled_reason) between 1 and 500",
+            name="care_order_cancel_reason_length",
+        ),
+        CheckConstraint(
+            "revise_reason is null or char_length(revise_reason) between 1 and 500",
+            name="care_order_revise_reason_length",
+        ),
+        CheckConstraint("revision_no >= 1", name="care_order_revision_no"),
+        CheckConstraint("schema_version = 1", name="care_order_schema_version"),
+        Index("care_orders_subject_idx", "subject_id", "mission_id", "status"),
+    )
+
+
+class CareOrderEvent(Base):
+    __tablename__ = "care_order_events"
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    order_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), ForeignKey("care_orders.id", ondelete="RESTRICT"))
+    subject_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), ForeignKey("profiles.id", ondelete="RESTRICT"))
+    mission_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), ForeignKey("missions.id", ondelete="RESTRICT"))
+    event_type: Mapped[str] = mapped_column(Text)
+    actor_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), ForeignKey("profiles.id", ondelete="RESTRICT"))
+    detail: Mapped[str | None] = mapped_column(Text)
+    server_at: Mapped[datetime] = mapped_column(timestamptz, server_default=text("now()"))
+
+    __table_args__ = (
+        CheckConstraint(
+            "event_type in ("
+            "'created', 'revised', 'cancelled', 'completed_by_crew', 'skipped_by_crew', 'acknowledged')",
+            name="care_order_event_type_values",
+        ),
+        CheckConstraint("detail is null or char_length(detail) <= 500", name="care_order_event_detail_length"),
+        Index("care_order_events_order_idx", "order_id", "server_at"),
+    )
+
+
+class CareOrderResponse(Base):
+    __tablename__ = "care_order_responses"
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    order_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), ForeignKey("care_orders.id", ondelete="RESTRICT"))
+    subject_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), ForeignKey("profiles.id", ondelete="RESTRICT"))
+    mission_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), ForeignKey("missions.id", ondelete="RESTRICT"))
+    decision: Mapped[str] = mapped_column(Text)
+    note: Mapped[str | None] = mapped_column(Text)
+    recorded_at: Mapped[datetime] = mapped_column(timestamptz)
+    created_at_device: Mapped[datetime] = mapped_column(timestamptz)
+    operation_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True))
+    payload_hash: Mapped[str] = mapped_column(Text)
+    created_at_server: Mapped[datetime] = mapped_column(timestamptz, server_default=text("now()"))
+
+    __table_args__ = (
+        UniqueConstraint("operation_id", name="uq_care_order_responses_operation_id"),
+        CheckConstraint("decision in ('done', 'skipped', 'acknowledged')", name="care_order_decision_values"),
+        CheckConstraint("note is null or char_length(note) between 1 and 1000", name="care_order_note_length"),
+        CheckConstraint("payload_hash ~ '^[0-9a-f]{64}$'", name="care_order_response_hash_shape"),
+        Index("care_order_responses_order_idx", "order_id", "created_at_server"),
+    )
+
+
 class SyncReceipt(Base):
     """Idempotency receipt. A separate table with no HTTP read route."""
 
@@ -616,7 +716,7 @@ class SyncReceipt(Base):
         CheckConstraint(
             "operation_type in ("
             "'checkin_bundle', 'measurement', 'report_bundle', 'invalidation', "
-            "'profile_preferences', 'consent_change')",
+            "'profile_preferences', 'consent_change', 'care_order_response')",
             name="operation_type_values",
         ),
         CheckConstraint("payload_hash ~ '^[0-9a-f]{64}$'", name="payload_hash_shape"),

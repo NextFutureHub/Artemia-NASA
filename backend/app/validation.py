@@ -226,6 +226,21 @@ def require_timestamp(value: object, code: str) -> datetime:
     return parsed
 
 
+def require_due_timestamp(value: object, code: str) -> datetime:
+    """Due dates may be in the future; still reject far-away placeholders."""
+    if not isinstance(value, str) or TIMESTAMP_RE.fullmatch(value) is None:
+        fail(code)
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        fail(code)
+    now = datetime.now(timezone.utc)
+    if parsed > now + timedelta(days=370):
+        fail("due_too_far")
+    if parsed < now - timedelta(days=30):
+        fail("due_too_old")
+    return parsed
+
+
 def require_date(value: object, code: str):
     if not isinstance(value, str) or DATE_RE.fullmatch(value) is None:
         fail(code)

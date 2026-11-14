@@ -13,6 +13,7 @@ from app.config import get_settings
 from app.constants import MAX_BODY_BYTES
 from app.db import get_db
 from app.errors import ContractError, http_status_for
+from app.care_orders import cancel_order, create_order, list_board_orders, list_crew_orders, revise_order
 from app.ground import crew_card, inbox, mark_opened, post_message, read_personal_report, read_report
 from app.models import (
     Account,
@@ -229,6 +230,92 @@ def ground_crew(
     if card is None:
         raise HTTPException(status_code=404, detail="not_found")
     return card
+
+
+@app.get("/ground/crew/{subject_id}/orders")
+def ground_crew_orders(
+    subject_id: UUID,
+    mission_id: UUID,
+    account: Account = Depends(current_user),
+    session: Session = Depends(get_db),
+) -> dict[str, object]:
+    try:
+        return list_crew_orders(session, account.id, mission_id, subject_id)
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail="forbidden") from error
+
+
+@app.post("/ground/crew/{subject_id}/orders")
+async def ground_create_order(
+    subject_id: UUID,
+    mission_id: UUID,
+    request: Request,
+    account: Account = Depends(current_user),
+    session: Session = Depends(get_db),
+) -> dict[str, object]:
+    try:
+        body = await request.json()
+    except json.JSONDecodeError as error:
+        raise HTTPException(status_code=422, detail="invalid_json") from error
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=422, detail="invalid_json")
+    try:
+        return create_order(session, account.id, mission_id, subject_id, body)
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail="forbidden") from error
+    except ContractError as error:
+        raise HTTPException(status_code=http_status_for(error.status), detail=error.code) from error
+
+
+@app.post("/ground/orders/{order_id}/revise")
+async def ground_revise_order(
+    order_id: UUID,
+    request: Request,
+    account: Account = Depends(current_user),
+    session: Session = Depends(get_db),
+) -> dict[str, object]:
+    try:
+        body = await request.json()
+    except json.JSONDecodeError as error:
+        raise HTTPException(status_code=422, detail="invalid_json") from error
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=422, detail="invalid_json")
+    try:
+        return revise_order(session, account.id, order_id, body)
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail="forbidden") from error
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail="not_found") from error
+    except ContractError as error:
+        raise HTTPException(status_code=http_status_for(error.status), detail=error.code) from error
+
+
+@app.post("/ground/orders/{order_id}/cancel")
+async def ground_cancel_order(
+    order_id: UUID,
+    request: Request,
+    account: Account = Depends(current_user),
+    session: Session = Depends(get_db),
+) -> dict[str, object]:
+    try:
+        body = await request.json()
+    except json.JSONDecodeError as error:
+        raise HTTPException(status_code=422, detail="invalid_json") from error
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=422, detail="invalid_json")
+    try:
+        return cancel_order(session, account.id, order_id, body)
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail="forbidden") from error
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail="not_found") from error
+    except ContractError as error:
+        raise HTTPException(status_code=http_status_for(error.status), detail=error.code) from error
+
+
+@app.get("/care-orders")
+def board_care_orders(account: Account = Depends(current_user), session: Session = Depends(get_db)) -> dict[str, object]:
+    return list_board_orders(session, account.id)
 
 
 @app.get("/missions/{mission_id}/reports/{report_id}")

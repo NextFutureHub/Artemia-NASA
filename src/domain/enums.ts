@@ -58,8 +58,24 @@ export const OPERATION_TYPES = [
   'invalidation',
   'profile_preferences',
   'consent_change',
+  'care_order_response',
 ] as const
 export type OperationType = (typeof OPERATION_TYPES)[number]
+
+export const CARE_ORDER_KINDS = [
+  'examination',
+  'measurement',
+  'recommendation',
+  'symptom_monitor',
+  'follow_up',
+] as const
+export type CareOrderKind = (typeof CARE_ORDER_KINDS)[number]
+
+export const CARE_ORDER_STATUSES = ['active', 'cancelled', 'completed'] as const
+export type CareOrderStatus = (typeof CARE_ORDER_STATUSES)[number]
+
+export const CARE_ORDER_DECISIONS = ['done', 'skipped', 'acknowledged'] as const
+export type CareOrderDecision = (typeof CARE_ORDER_DECISIONS)[number]
 
 export const CHECKIN_TYPES = ['daily', 'change'] as const
 export type CheckinType = (typeof CHECKIN_TYPES)[number]

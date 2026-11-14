@@ -3,6 +3,9 @@ import type { PersonalPayload } from '../../domain/personalPayload.ts'
 import type { CheckinDraftValues, CheckinStep } from '../../domain/checkinDraft.ts'
 import type { DoctorWork, ReportDelivery, ReportSnapshot } from '../../domain/reportSnapshot.ts'
 import type {
+  CareOrderDecision,
+  CareOrderKind,
+  CareOrderStatus,
   ConsentDecision,
   ConsentScope,
   MeasurementContext,
@@ -289,6 +292,31 @@ export type LocalAudit = {
   event_code: string
   operation_id: string | null
   entity_id: string | null
+}
+
+export type LocalCareOrder = {
+  id: string
+  owner_id: string
+  environment_id: string
+  mission_id: string
+  assignment_id: string
+  doctor_id: string
+  kind: CareOrderKind
+  title: string
+  instructions: string
+  schedule_text: string
+  due_at: string | null
+  status: CareOrderStatus
+  revision_no: number
+  cancelled_reason: string | null
+  revise_reason: string | null
+  ack_required: boolean
+  acknowledged_at: string | null
+  created_at: string
+  updated_at: string
+  last_decision: CareOrderDecision | null
+  last_note: string | null
+  last_response_at: string | null
 }
 
 export type OwnedRow = { owner_id: string; environment_id: string }

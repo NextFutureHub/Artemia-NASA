@@ -3,6 +3,7 @@ import type {
   AssignmentCache,
   DraftRecord,
   LocalAudit,
+  LocalCareOrder,
   LocalCheckin,
   LocalConsent,
   LocalLink,
@@ -41,6 +42,7 @@ export class ArtemiaDb extends Dexie {
   receipts!: Table<LocalReceipt, string>
   syncCursors!: Table<OwnedRow & { id: string; scope: string }, string>
   localAudit!: Table<LocalAudit, string>
+  localCareOrders!: Table<LocalCareOrder, string>
   demoSettings!: Table<OwnedRow & { id: string }, string>
   observationHides!: Table<OwnedRow & { id: string; rule_id: string; entity_id: string }, string>
 
@@ -68,6 +70,9 @@ export class ArtemiaDb extends Dexie {
       localAudit: 'id, [owner_id+environment_id]',
       demoSettings: '[owner_id+environment_id]',
       observationHides: 'id, [owner_id+environment_id]',
+    })
+    this.version(2).stores({
+      localCareOrders: 'id, [owner_id+environment_id]',
     })
   }
 }

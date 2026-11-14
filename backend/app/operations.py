@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.access import assignment_is_active, is_active_astronaut, personal_consent_granted
 from app.canonical import hash_operation, hash_payload_part
+from app.care_orders import apply_care_order_response_with_hash, validate_care_order_response
 from app.constants import OPERATION_TYPES, SCHEMA_VERSION
 from app.errors import ContractError, OperationResult
 from app.models import (
@@ -99,7 +100,11 @@ def _submit(session: Session, actor_id: UUID, body: dict[str, Any]) -> Operation
     if computed != provided_hash:
         raise ContractError("validation_error", "hash_mismatch")
 
-    refs = _APPLY[operation_type](session, actor_id, payload)
+    apply_payload = dict(payload)
+    if operation_type == "care_order_response":
+        apply_payload["__operation_id"] = str(operation_id)
+        apply_payload["__payload_hash"] = computed
+    refs = _APPLY[operation_type](session, actor_id, apply_payload)
     receipt_id = uuid4()
     session.add(
         SyncReceipt(
@@ -553,6 +558,17 @@ def _from_integrity(session: Session, actor_id: UUID, body: dict[str, Any], erro
     return OperationResult("validation_error", "duplicate_entity")
 
 
+def _apply_care_order_response(session: Session, actor_id: UUID, payload: dict[str, Any]) -> dict[str, object]:
+    validate_care_order_response(payload)
+    # Hash and operation_id are attached by _submit before apply; recover from thread-local body via payload fields.
+    operation_id = require_uuid(payload["__operation_id"], "operation_id") if "__operation_id" in payload else require_uuid(payload.get("id"), "id")
+    payload_hash = payload.get("__payload_hash")
+    if not isinstance(payload_hash, str):
+        raise ContractError("validation_error", "hash_format")
+    clean = {key: value for key, value in payload.items() if not key.startswith("__")}
+    return apply_care_order_response_with_hash(session, actor_id, clean, operation_id, payload_hash)
+
+
 _APPLY = {
     "checkin_bundle": _apply_checkin,
     "measurement": _apply_measurement,
@@ -560,4 +576,5 @@ _APPLY = {
     "invalidation": _apply_invalidation,
     "profile_preferences": _apply_preferences,
     "consent_change": _apply_consent,
+    "care_order_response": _apply_care_order_response,
 }
