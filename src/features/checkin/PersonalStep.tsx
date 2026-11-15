@@ -1,5 +1,6 @@
 import type { UseFormReturn } from 'react-hook-form'
 import { ChoiceButtons } from '../../components/Choices.tsx'
+import { OptionalGate } from '../../components/FormChrome.tsx'
 import { Field } from '../../components/ui.tsx'
 import type { CheckinDraftValues } from '../../domain/checkinDraft.ts'
 import type { SharingMode } from '../../domain/enums.ts'
@@ -20,6 +21,7 @@ export function PersonalStep({
 }) {
   const bleedingPresent = values.bleeding === 'spotting' || values.bleeding === 'menstrual' || values.bleeding === 'other'
   const adherenceVisible = values.cycleContext === 'suppression_regimen'
+  const choice = values.personalFill === 'yes' ? 'fill' : values.personalFill === 'skip' ? 'skip' : null
   return (
     <section className="flex flex-col gap-4">
       <div>
@@ -29,159 +31,162 @@ export function PersonalStep({
           {t(locale, 'configureSection')}
         </button>
       </div>
-      <ChoiceButtons
+      <OptionalGate
         locale={locale}
-        labelText={t(locale, 'fillToday')}
-        value={values.personalFill}
-        onChange={(value) => form.setValue('personalFill', value)}
-        options={[
-          { value: 'yes', label: { ru: 'Да', en: 'Yes' } },
-          { value: 'skip', label: { ru: 'Пропустить', en: 'Skip' } },
-        ]}
-      />
-      {errorFor('personalFill') ? <p className="text-sm text-danger">{errorFor('personalFill')}</p> : null}
-      {values.personalFill === 'yes' ? (
-        <>
-          <ChoiceButtons
-            locale={locale}
-            labelText={t(locale, 'bleeding')}
-            value={values.bleeding}
-            onChange={(value) => form.setValue('bleeding', value)}
-            options={[
-              { value: 'none', label: { ru: 'Нет', en: 'No' } },
-              { value: 'spotting', label: { ru: 'Мажущие', en: 'Spotting' } },
-              { value: 'menstrual', label: { ru: 'Менструальные', en: 'Menstrual' } },
-              { value: 'other', label: { ru: 'Другое', en: 'Other' } },
-              { value: 'unsure', label: { ru: 'Не уверена(ен)', en: 'Not sure' } },
-              { value: 'declined', label: { ru: 'Не хочу отвечать', en: 'I do not want to answer' } },
-            ]}
-          />
-          {bleedingPresent ? (
-            <fieldset>
-              <legend className="mb-2 text-sm">{t(locale, 'intensity')}</legend>
-              <div className="flex flex-wrap gap-2">
-                {(['light', 'moderate', 'heavy', 'cannot_assess'] as const).map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    aria-pressed={!values.intensitySkip && values.intensity === value}
-                    className={`min-h-11 rounded-xl border px-3 ${!values.intensitySkip && values.intensity === value ? 'border-accent text-accent' : 'border-line'}`}
-                    onClick={() => {
-                      form.setValue('intensitySkip', false)
-                      form.setValue('intensity', value)
-                    }}
-                  >
-                    {label(locale, intensityLabel[value])}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  aria-pressed={values.intensitySkip}
-                  className={`min-h-11 rounded-xl border px-3 ${values.intensitySkip ? 'border-accent text-accent' : 'border-line'}`}
-                  onClick={() => form.setValue('intensitySkip', true)}
-                >
-                  {t(locale, 'doNotRate')}
-                </button>
-              </div>
-            </fieldset>
-          ) : null}
-          <ChoiceButtons
-            locale={locale}
-            labelText={t(locale, 'expected')}
-            value={values.expectedness}
-            onChange={(value) => form.setValue('expectedness', value)}
-            options={[
-              { value: 'yes', label: { ru: 'Да', en: 'Yes' } },
-              { value: 'no', label: { ru: 'Нет', en: 'No' } },
-              { value: 'unknown', label: { ru: 'Не знаю', en: 'I do not know' } },
-              { value: 'declined', label: { ru: 'Не хочу отвечать', en: 'I do not want to answer' } },
-            ]}
-          />
+        title={t(locale, 'fillToday')}
+        lead={t(locale, 'personalLead')}
+        choice={choice}
+        onFill={() => form.setValue('personalFill', 'yes')}
+        onSkip={() => form.setValue('personalFill', 'skip')}
+      >
+        {errorFor('personalFill') ? <p className="text-sm text-danger">{errorFor('personalFill')}</p> : null}
+        <ChoiceButtons
+          locale={locale}
+          labelText={t(locale, 'bleeding')}
+          value={values.bleeding}
+          onChange={(value) => form.setValue('bleeding', value)}
+          options={[
+            { value: 'none', label: { ru: 'Нет', en: 'No' } },
+            { value: 'spotting', label: { ru: 'Мажущие', en: 'Spotting' } },
+            { value: 'menstrual', label: { ru: 'Менструальные', en: 'Menstrual' } },
+            { value: 'other', label: { ru: 'Другое', en: 'Other' } },
+            { value: 'unsure', label: { ru: 'Не уверена(ен)', en: 'Not sure' } },
+            { value: 'declined', label: { ru: 'Не хочу отвечать', en: 'I do not want to answer' } },
+          ]}
+        />
+        {bleedingPresent ? (
           <fieldset>
-            <legend className="mb-2 text-sm">{t(locale, 'discomfort')}</legend>
+            <legend className="mb-2 text-sm">{t(locale, 'intensity')}</legend>
             <div className="flex flex-wrap gap-2">
-              {Array.from({ length: 11 }, (_, point) => (
+              {(['light', 'moderate', 'heavy', 'cannot_assess'] as const).map((value) => (
                 <button
-                  key={point}
+                  key={value}
                   type="button"
-                  aria-pressed={!values.discomfortSkip && values.discomfort === point}
-                  className={`numeric min-h-11 min-w-11 rounded-xl border ${!values.discomfortSkip && values.discomfort === point ? 'border-accent text-accent' : 'border-line'}`}
+                  aria-pressed={!values.intensitySkip && values.intensity === value}
+                  className={`min-h-11 rounded-xl border px-3 ${!values.intensitySkip && values.intensity === value ? 'border-accent text-accent' : 'border-line'}`}
                   onClick={() => {
-                    form.setValue('discomfortSkip', false)
-                    form.setValue('discomfort', point)
+                    form.setValue('intensitySkip', false)
+                    form.setValue('intensity', value)
                   }}
                 >
-                  {point}
+                  {label(locale, intensityLabel[value])}
                 </button>
               ))}
               <button
                 type="button"
-                aria-pressed={values.discomfortSkip}
-                className={`min-h-11 rounded-xl border px-3 ${values.discomfortSkip ? 'border-accent text-accent' : 'border-line'}`}
-                onClick={() => form.setValue('discomfortSkip', true)}
+                aria-pressed={values.intensitySkip}
+                className={`min-h-11 rounded-xl border px-3 ${values.intensitySkip ? 'border-accent text-accent' : 'border-line'}`}
+                onClick={() => form.setValue('intensitySkip', true)}
               >
                 {t(locale, 'doNotRate')}
               </button>
             </div>
           </fieldset>
+        ) : null}
+        <ChoiceButtons
+          locale={locale}
+          labelText={t(locale, 'expected')}
+          value={values.expectedness}
+          onChange={(value) => form.setValue('expectedness', value)}
+          options={[
+            { value: 'yes', label: { ru: 'Да', en: 'Yes' } },
+            { value: 'no', label: { ru: 'Нет', en: 'No' } },
+            { value: 'unknown', label: { ru: 'Не знаю', en: 'I do not know' } },
+            { value: 'declined', label: { ru: 'Не хочу отвечать', en: 'I do not want to answer' } },
+          ]}
+        />
+        <fieldset>
+          <legend className="mb-2 text-sm">{t(locale, 'discomfort')}</legend>
+          <div className="flex flex-wrap gap-2">
+            {Array.from({ length: 11 }, (_, point) => (
+              <button
+                key={point}
+                type="button"
+                aria-pressed={!values.discomfortSkip && values.discomfort === point}
+                className={`numeric min-h-11 min-w-11 rounded-xl border ${!values.discomfortSkip && values.discomfort === point ? 'border-accent text-accent' : 'border-line'}`}
+                onClick={() => {
+                  form.setValue('discomfortSkip', false)
+                  form.setValue('discomfort', point)
+                }}
+              >
+                {point}
+              </button>
+            ))}
+            <button
+              type="button"
+              aria-pressed={values.discomfortSkip}
+              className={`min-h-11 rounded-xl border px-3 ${values.discomfortSkip ? 'border-accent text-accent' : 'border-line'}`}
+              onClick={() => form.setValue('discomfortSkip', true)}
+            >
+              {t(locale, 'doNotRate')}
+            </button>
+          </div>
+          <p className="mt-1 text-sm text-muted">
+            {values.discomfortSkip
+              ? t(locale, 'answerDeclined')
+              : values.discomfort === 0
+                ? t(locale, 'answerZero')
+                : values.discomfort === null
+                  ? t(locale, 'answerNone')
+                  : null}
+          </p>
+        </fieldset>
+        <ChoiceButtons
+          locale={locale}
+          labelText={t(locale, 'impact')}
+          value={values.activityImpact}
+          onChange={(value) => form.setValue('activityImpact', value)}
+          options={[
+            { value: 'none', label: { ru: 'Не влияет', en: 'No effect' } },
+            { value: 'some', label: { ru: 'Немного', en: 'Some effect' } },
+            { value: 'severe', label: { ru: 'Сильно', en: 'A strong effect' } },
+            { value: 'cannot_assess', label: { ru: 'Не оценивать', en: 'Do not rate' } },
+          ]}
+        />
+        <ChoiceButtons
+          locale={locale}
+          labelText={t(locale, 'cycleContext')}
+          value={values.cycleContext}
+          onChange={(value) => form.setValue('cycleContext', value)}
+          options={[
+            { value: 'natural', label: { ru: 'Естественный цикл', en: 'Natural cycle' } },
+            { value: 'suppression_regimen', label: { ru: 'Использую назначенную схему подавления менструации', en: 'Using a prescribed menstrual suppression regimen' } },
+            { value: 'other', label: { ru: 'Другой контекст', en: 'Another context' } },
+            { value: 'declined', label: { ru: 'Не хочу отвечать', en: 'I do not want to answer' } },
+          ]}
+        />
+        {adherenceVisible ? (
           <ChoiceButtons
             locale={locale}
-            labelText={t(locale, 'impact')}
-            value={values.activityImpact}
-            onChange={(value) => form.setValue('activityImpact', value)}
+            labelText={t(locale, 'adherence')}
+            value={values.adherence}
+            onChange={(value) => form.setValue('adherence', value)}
             options={[
-              { value: 'none', label: { ru: 'Не влияет', en: 'No effect' } },
-              { value: 'some', label: { ru: 'Немного', en: 'Some effect' } },
-              { value: 'severe', label: { ru: 'Сильно', en: 'A strong effect' } },
-              { value: 'cannot_assess', label: { ru: 'Не оценивать', en: 'Do not rate' } },
-            ]}
-          />
-          <ChoiceButtons
-            locale={locale}
-            labelText={t(locale, 'cycleContext')}
-            value={values.cycleContext}
-            onChange={(value) => form.setValue('cycleContext', value)}
-            options={[
-              { value: 'natural', label: { ru: 'Естественный цикл', en: 'Natural cycle' } },
-              { value: 'suppression_regimen', label: { ru: 'Использую назначенную схему подавления менструации', en: 'Using a prescribed menstrual suppression regimen' } },
-              { value: 'other', label: { ru: 'Другой контекст', en: 'Another context' } },
+              { value: 'on_plan', label: { ru: 'По плану', en: 'On plan' } },
+              { value: 'missed_or_changed', label: { ru: 'Был пропуск или изменение', en: 'There was a missed dose or a change' } },
               { value: 'declined', label: { ru: 'Не хочу отвечать', en: 'I do not want to answer' } },
             ]}
           />
-          {adherenceVisible ? (
-            <ChoiceButtons
-              locale={locale}
-              labelText={t(locale, 'adherence')}
-              value={values.adherence}
-              onChange={(value) => form.setValue('adherence', value)}
-              options={[
-                { value: 'on_plan', label: { ru: 'По плану', en: 'On plan' } },
-                { value: 'missed_or_changed', label: { ru: 'Был пропуск или изменение', en: 'There was a missed dose or a change' } },
-                { value: 'declined', label: { ru: 'Не хочу отвечать', en: 'I do not want to answer' } },
-              ]}
-            />
-          ) : null}
-          <p className="text-sm text-muted">{t(locale, 'personalLead')}</p>
-          <label className="flex min-h-11 items-center gap-2">
-            <input type="checkbox" checked={values.personalReview} onChange={(event) => form.setValue('personalReview', event.target.checked)} />
-            {t(locale, 'discussDoctor')}
-          </label>
-          <Field id="personalComment" label={t(locale, 'personalComment')} error={errorFor('personalComment')}>
-            <textarea id="personalComment" maxLength={1000} className="min-h-24 rounded-xl border border-line bg-canvas px-3 py-2" {...form.register('personalComment')} />
-          </Field>
-          <ChoiceButtons
-            locale={locale}
-            labelText={t(locale, 'sectionAccess')}
-            value={values.personalSharing}
-            onChange={(value: SharingMode) => form.setValue('personalSharing', value)}
-            options={[
-              { value: 'device_only', label: { ru: 'Только это устройство', en: 'This device only' } },
-              { value: 'assigned_doctor', label: { ru: 'Назначенный врач', en: 'Assigned physician' } },
-            ]}
-          />
-          {errorFor('personalSharing') ? <p className="text-sm text-danger">{errorFor('personalSharing')}</p> : null}
-        </>
-      ) : null}
+        ) : null}
+        <label className="flex min-h-11 items-center gap-2">
+          <input type="checkbox" checked={values.personalReview} onChange={(event) => form.setValue('personalReview', event.target.checked)} />
+          {t(locale, 'discussDoctor')}
+        </label>
+        <Field id="personalComment" label={t(locale, 'personalComment')} error={errorFor('personalComment')}>
+          <textarea id="personalComment" maxLength={1000} className="min-h-24 rounded-xl border border-line bg-canvas px-3 py-2" {...form.register('personalComment')} />
+        </Field>
+        <ChoiceButtons
+          locale={locale}
+          labelText={t(locale, 'sectionAccess')}
+          value={values.personalSharing}
+          onChange={(value: SharingMode) => form.setValue('personalSharing', value)}
+          options={[
+            { value: 'device_only', label: { ru: 'Только это устройство', en: 'This device only' } },
+            { value: 'assigned_doctor', label: { ru: 'Назначенный врач', en: 'Assigned physician' } },
+          ]}
+        />
+        {errorFor('personalSharing') ? <p className="text-sm text-danger">{errorFor('personalSharing')}</p> : null}
+      </OptionalGate>
     </section>
   )
 }

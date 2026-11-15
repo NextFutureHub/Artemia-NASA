@@ -10,6 +10,8 @@ from uuid import UUID
 
 from app.constants import (
     ANSWER_STATUSES,
+    APPETITE_VALUES,
+    AWAKENINGS_VALUES,
     BLEEDING_CATEGORIES,
     BLEEDING_INTENSITIES,
     CHECKIN_TYPES,
@@ -19,22 +21,36 @@ from app.constants import (
     CYCLE_CONTEXTS,
     EMOTIONAL_STATES,
     EXPECTEDNESS_VALUES,
+    FLUID_COMPLETENESS,
+    FLUID_ML_MAX,
     IMPACT_VALUES,
     INVALIDATION_TARGETS,
     LOCALES,
+    MEAL_PLAN_VALUES,
     MEASUREMENT_CONTEXTS,
     MEASUREMENT_QUALITIES,
     MEASUREMENT_SOURCES,
     METRICS,
+    NUTRITION_DEVIATION,
     ONSET_CATEGORIES,
     OVERALL_STATES,
     PERSISTENCE_VALUES,
     PLAN_ADHERENCE,
     REPORT_REASONS,
+    SECTION_FILL,
     SEX_CONTEXTS,
     SHARING_MODES,
+    SLEEP_DURATION_SOURCES,
+    SLEEP_INTERFERING,
+    SLEEP_INTERVAL_KINDS,
+    SLEEP_INTERVAL_QUALITIES,
+    SLEEP_PLAN_DEVIATION,
+    SLEEPINESS_VALUES,
     SYMPTOM_CODES,
     SYMPTOM_PRESENCE,
+    ACTIVITY_COMPLETIONS,
+    ACTIVITY_SKIP_REASONS,
+    ACTIVITY_TYPES,
 )
 from app.errors import ContractError
 
@@ -60,21 +76,68 @@ CHECKIN_KEYS = {
 }
 REVISION_KEYS = {"general_payload", "id", "parent_revision_id", "reason", "revision_no"}
 GENERAL_KEYS = {
+    "awakenings",
+    "awakenings_answer_status",
     "comment",
     "context",
     "emotional_state",
     "fatigue_answer_status",
     "fatigue_score",
+    "nutrition",
     "overall_state",
+    "report_period",
     "review_requested",
     "sleep_answer_status",
+    "sleep_comment",
+    "sleep_discuss",
+    "sleep_discuss_answer_status",
+    "sleep_duration_source",
     "sleep_hours",
+    "sleep_interfering",
+    "sleep_interfering_answer_status",
+    "sleep_intervals",
+    "sleep_plan_deviation",
+    "sleep_plan_deviation_answer_status",
     "sleep_quality",
     "sleep_quality_answer_status",
+    "sleepiness",
+    "sleepiness_answer_status",
     "stress_answer_status",
     "stress_score",
     "symptom_presence",
     "symptoms",
+}
+ACTIVITY_KEYS = {
+    "activity_type",
+    "actual_duration_min",
+    "care_order_id",
+    "comment",
+    "completion",
+    "exertion",
+    "exertion_answer_status",
+    "id",
+    "measurement_ids",
+    "mission_id",
+    "planned_duration_min",
+    "skip_reason",
+    "started_at",
+}
+NUTRITION_KEYS = {
+    "appetite",
+    "appetite_answer_status",
+    "comment",
+    "deviation_reason",
+    "deviation_reason_answer_status",
+    "fluid_answer_status",
+    "fluid_completeness",
+    "fluid_ml",
+    "meal_plan",
+    "meal_plan_answer_status",
+    "missed_meals",
+    "missed_meals_answer_status",
+    "period_end",
+    "period_start",
+    "section_status",
 }
 SYMPTOM_KEYS = {
     "answer_status",
@@ -332,10 +395,31 @@ def validate_general_payload(value: object) -> dict[str, Any]:
     payload = require_keys(value, GENERAL_KEYS, "general_payload_keys")
     if payload["overall_state"] not in OVERALL_STATES:
         fail("overall_state")
+    validate_report_period(payload["report_period"])
     status_number(payload["sleep_hours"], payload["sleep_answer_status"], Decimal(0), Decimal(24), Decimal("0.5"), "sleep_hours")
     status_number(
         payload["sleep_quality"], payload["sleep_quality_answer_status"], Decimal(1), Decimal(5), Decimal(1), "sleep_quality"
     )
+    optional_choice(payload["sleepiness"], payload["sleepiness_answer_status"], SLEEPINESS_VALUES, "sleepiness")
+    optional_choice(payload["awakenings"], payload["awakenings_answer_status"], AWAKENINGS_VALUES, "awakenings")
+    optional_choice(
+        payload["sleep_plan_deviation"],
+        payload["sleep_plan_deviation_answer_status"],
+        SLEEP_PLAN_DEVIATION,
+        "sleep_plan_deviation",
+    )
+    validate_sleep_interfering(payload["sleep_interfering"], payload["sleep_interfering_answer_status"])
+    if payload["sleep_discuss_answer_status"] not in ANSWER_STATUSES:
+        fail("sleep_discuss_answer_status")
+    if payload["sleep_discuss_answer_status"] == "answered":
+        if not isinstance(payload["sleep_discuss"], bool):
+            fail("sleep_discuss")
+    elif payload["sleep_discuss"] is not None:
+        fail("sleep_discuss")
+    sleep_comment = payload["sleep_comment"]
+    if sleep_comment is not None and (not isinstance(sleep_comment, str) or not 1 <= len(sleep_comment) <= 500):
+        fail("sleep_comment")
+    validate_sleep_intervals(payload["sleep_intervals"], payload["sleep_hours"], payload["sleep_answer_status"], payload["sleep_duration_source"])
     status_number(payload["fatigue_score"], payload["fatigue_answer_status"], Decimal(0), Decimal(10), Decimal(1), "fatigue_score")
     status_number(payload["stress_score"], payload["stress_answer_status"], Decimal(0), Decimal(10), Decimal(1), "stress_score")
     emotional = payload["emotional_state"]
@@ -368,6 +452,7 @@ def validate_general_payload(value: object) -> dict[str, Any]:
     comment = payload["comment"]
     if comment is not None and (not isinstance(comment, str) or not 1 <= len(comment) <= 1000):
         fail("comment")
+    validate_nutrition(payload["nutrition"])
     if payload["symptom_presence"] not in SYMPTOM_PRESENCE:
         fail("symptom_presence")
     symptoms = payload["symptoms"]
@@ -382,6 +467,238 @@ def validate_general_payload(value: object) -> dict[str, Any]:
     if not isinstance(payload["review_requested"], bool):
         fail("review_requested")
     return payload
+
+
+def validate_report_period(value: object) -> None:
+    if not isinstance(value, dict) or set(value) != {"start_at", "end_at"}:
+        fail("report_period")
+    start = require_timestamp(value["start_at"], "report_period")
+    end = require_timestamp(value["end_at"], "report_period")
+    if start >= end:
+        fail("period_order")
+
+
+def validate_sleep_intervals(
+    value: object,
+    sleep_hours: object,
+    sleep_answer_status: object,
+    sleep_duration_source: object,
+) -> None:
+    if not isinstance(value, list) or len(value) > 12:
+        fail("sleep_intervals")
+    intervals: list[dict[str, object]] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, dict) or set(item) != {"start_at", "end_at", "kind", "quality"}:
+            fail("sleep_intervals")
+        if item["kind"] not in SLEEP_INTERVAL_KINDS or item["quality"] not in SLEEP_INTERVAL_QUALITIES:
+            fail("sleep_intervals")
+        start = require_timestamp(item["start_at"], "sleep_intervals")
+        end = require_timestamp(item["end_at"], "sleep_intervals")
+        if end <= start:
+            fail("period_order")
+        hours = (end - start).total_seconds() / 3600
+        if hours > 24:
+            fail("sleep_intervals")
+        for prior in intervals:
+            if (
+                prior["start_at"] == item["start_at"]
+                and prior["end_at"] == item["end_at"]
+                and prior["kind"] == item["kind"]
+                and prior["quality"] == item["quality"]
+            ):
+                fail("duplicate_interval")
+            p0 = require_timestamp(prior["start_at"], "sleep_intervals")
+            p1 = require_timestamp(prior["end_at"], "sleep_intervals")
+            if start < p1 and p0 < end:
+                fail("overlap")
+        intervals.append(item)
+
+    overall_ok = sleep_answer_status == "answered" and sleep_hours is not None
+    intervals_ok = any(item["quality"] == "slept" for item in intervals)
+    if sleep_duration_source is not None and sleep_duration_source not in SLEEP_DURATION_SOURCES:
+        fail("sleep_duration_source")
+    if overall_ok and intervals_ok and sleep_duration_source is None:
+        fail("sleep_source_required")
+    if not overall_ok and not intervals_ok and sleep_duration_source is not None:
+        fail("sleep_duration_source")
+    if sleep_duration_source == "intervals" and not intervals_ok:
+        fail("intervals_required")
+    if sleep_duration_source == "overall" and not overall_ok:
+        fail("overall_required")
+
+
+def validate_activity_payload(value: object) -> dict[str, Any]:
+    payload = require_keys(value, ACTIVITY_KEYS, "activity_keys")
+    require_uuid(payload["id"], "id")
+    require_uuid(payload["mission_id"], "mission_id")
+    require_timestamp(payload["started_at"], "started_at")
+    if payload["activity_type"] not in ACTIVITY_TYPES:
+        fail("activity_type")
+    care_order_id = payload["care_order_id"]
+    if care_order_id is not None:
+        require_uuid(care_order_id, "care_order_id")
+    planned = payload["planned_duration_min"]
+    if care_order_id is None:
+        if planned is not None:
+            fail("standalone_no_plan")
+    elif planned is not None:
+        if not isinstance(planned, int) or isinstance(planned, bool) or planned < 0 or planned > 24 * 60:
+            fail("planned_duration_min")
+    actual = payload["actual_duration_min"]
+    if not isinstance(actual, int) or isinstance(actual, bool) or not 0 <= actual <= 24 * 60:
+        fail("actual_duration_min")
+    if payload["completion"] not in ACTIVITY_COMPLETIONS:
+        fail("completion")
+    if payload["completion"] == "skipped":
+        if actual != 0:
+            fail("skip_duration_zero")
+        if payload["exertion"] is not None or payload["exertion_answer_status"] != "not_applicable":
+            fail("exertion")
+        if payload["measurement_ids"]:
+            fail("measurement_ids")
+        if payload["skip_reason"] not in ACTIVITY_SKIP_REASONS:
+            fail("skip_reason")
+    else:
+        if actual <= 0:
+            fail("actual_duration_min")
+        if payload["skip_reason"] is not None:
+            fail("skip_reason")
+        if payload["exertion_answer_status"] == "answered":
+            status_number(payload["exertion"], "answered", Decimal(0), Decimal(10), Decimal(1), "exertion")
+        elif payload["exertion_answer_status"] == "declined":
+            if payload["exertion"] is not None:
+                fail("exertion")
+        else:
+            fail("exertion_answer_status")
+    if not isinstance(payload["measurement_ids"], list) or len(payload["measurement_ids"]) > 20:
+        fail("measurement_ids")
+    seen: set[str] = set()
+    for mid in payload["measurement_ids"]:
+        uid = require_uuid(mid, "measurement_ids")
+        key = str(uid)
+        if key in seen:
+            fail("duplicate_measurement")
+        seen.add(key)
+    comment = payload["comment"]
+    if comment is not None and (not isinstance(comment, str) or not 1 <= len(comment) <= 1000):
+        fail("comment")
+    return payload
+
+
+def validate_sleep_interfering(value: object, status: object) -> None:
+    if status not in ANSWER_STATUSES:
+        fail("sleep_interfering_answer_status")
+    if not isinstance(value, list) or len(value) > 5:
+        fail("sleep_interfering")
+    if status != "answered":
+        if len(value) != 0:
+            fail("sleep_interfering")
+        return
+    if len(value) == 0:
+        fail("sleep_interfering")
+    codes: list[str] = []
+    for item in value:
+        if not isinstance(item, dict) or set(item) != {"code", "custom_label"}:
+            fail("sleep_interfering")
+        if item["code"] not in SLEEP_INTERFERING:
+            fail("sleep_interfering")
+        custom = item["custom_label"]
+        if custom is None:
+            pass
+        elif not isinstance(custom, str) or not 1 <= len(custom) <= 120 or item["code"] != "other":
+            fail("sleep_interfering")
+        codes.append(item["code"])
+    if len(set(codes)) != len(codes):
+        fail("sleep_interfering")
+
+
+def validate_nutrition(value: object) -> None:
+    nutrition = require_keys(value, NUTRITION_KEYS, "nutrition_keys")
+    if nutrition["section_status"] not in SECTION_FILL:
+        fail("nutrition_section_status")
+    if nutrition["section_status"] != "filled":
+        for field in (
+            "appetite",
+            "meal_plan",
+            "missed_meals",
+            "deviation_reason",
+            "fluid_ml",
+            "fluid_completeness",
+            "comment",
+            "period_start",
+            "period_end",
+        ):
+            if nutrition[field] is not None:
+                fail(f"nutrition_{field}")
+        for status_field in (
+            "appetite_answer_status",
+            "meal_plan_answer_status",
+            "missed_meals_answer_status",
+            "deviation_reason_answer_status",
+            "fluid_answer_status",
+        ):
+            if nutrition[status_field] != "not_applicable":
+                fail(status_field)
+        return
+    optional_choice(nutrition["appetite"], nutrition["appetite_answer_status"], APPETITE_VALUES, "appetite")
+    optional_choice(nutrition["meal_plan"], nutrition["meal_plan_answer_status"], MEAL_PLAN_VALUES, "meal_plan")
+    plan_partial = nutrition["meal_plan_answer_status"] == "answered" and nutrition["meal_plan"] in {
+        "partial",
+        "not_done",
+    }
+    if plan_partial:
+        if nutrition["missed_meals_answer_status"] == "unknown":
+            if nutrition["missed_meals"] is not None:
+                fail("missed_meals")
+        else:
+            status_number(
+                nutrition["missed_meals"],
+                nutrition["missed_meals_answer_status"],
+                Decimal(0),
+                Decimal(20),
+                Decimal(1),
+                "missed_meals",
+            )
+        if nutrition["deviation_reason_answer_status"] == "declined":
+            if nutrition["deviation_reason"] is not None:
+                fail("deviation_reason")
+        else:
+            optional_choice(
+                nutrition["deviation_reason"],
+                nutrition["deviation_reason_answer_status"],
+                NUTRITION_DEVIATION,
+                "deviation_reason",
+            )
+    else:
+        if nutrition["missed_meals"] is not None or nutrition["missed_meals_answer_status"] != "not_applicable":
+            fail("missed_meals")
+        if nutrition["deviation_reason"] is not None or nutrition["deviation_reason_answer_status"] != "not_applicable":
+            fail("deviation_reason")
+    if nutrition["fluid_answer_status"] == "answered":
+        status_number(
+            nutrition["fluid_ml"],
+            "answered",
+            Decimal(0),
+            Decimal(FLUID_ML_MAX),
+            Decimal(1),
+            "fluid_ml",
+        )
+        if nutrition["fluid_completeness"] not in FLUID_COMPLETENESS:
+            fail("fluid_completeness")
+    else:
+        if nutrition["fluid_ml"] is not None or nutrition["fluid_completeness"] is not None:
+            fail("fluid_ml")
+        if nutrition["fluid_answer_status"] not in ANSWER_STATUSES:
+            fail("fluid_answer_status")
+    comment = nutrition["comment"]
+    if comment is not None and (not isinstance(comment, str) or not 1 <= len(comment) <= 500):
+        fail("nutrition_comment")
+    if nutrition["period_start"] is None or nutrition["period_end"] is None:
+        fail("nutrition_period")
+    start = require_timestamp(nutrition["period_start"], "nutrition_period")
+    end = require_timestamp(nutrition["period_end"], "nutrition_period")
+    if start >= end:
+        fail("period_order")
 
 
 def validate_personal_payload(value: object) -> dict[str, Any]:
@@ -442,7 +759,7 @@ def measurement_number(metric: str, value: object) -> Decimal | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         fail("measurement_value")
     number = Decimal(str(value))
-    if metric == "temperature":
+    if metric in ("temperature", "body_mass"):
         quantized = number.quantize(Decimal("0.1"))
     else:
         quantized = number.quantize(Decimal("1"))
@@ -505,6 +822,8 @@ def _metric_unit_ok(metric: object, unit: object, number: Decimal | None) -> boo
         return unit == "percent" and (
             number is None or (number == number.to_integral_value() and Decimal(50) <= number <= Decimal(100))
         )
+    if metric == "body_mass":
+        return unit == "kg" and (number is None or Decimal(20) <= number <= Decimal(300))
     return False
 
 

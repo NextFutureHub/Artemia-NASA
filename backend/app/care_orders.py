@@ -23,8 +23,8 @@ from app.models import (
 from app.request_context import request_id_var
 from app.validation import optional_uuid, require_due_timestamp, require_timestamp, require_uuid
 
-CARE_KINDS = ("examination", "measurement", "recommendation", "symptom_monitor", "follow_up")
-CARE_DECISIONS = ("done", "skipped", "acknowledged")
+CARE_KINDS = ("examination", "measurement", "recommendation", "symptom_monitor", "follow_up", "workout")
+CARE_DECISIONS = ("done", "skipped", "acknowledged", "unable")
 
 
 def list_crew_orders(session: Session, doctor_id: UUID, mission_id: UUID, subject_id: UUID) -> dict[str, object]:
@@ -57,6 +57,7 @@ def create_order(session: Session, doctor_id: UUID, mission_id: UUID, subject_id
     title = body.get("title")
     instructions = body.get("instructions")
     schedule_text = body.get("schedule_text") or ""
+    goal = body.get("goal")
     if kind not in CARE_KINDS:
         raise ContractError("validation_error", "kind")
     if not isinstance(title, str) or not 1 <= len(title.strip()) <= 120:
@@ -65,6 +66,20 @@ def create_order(session: Session, doctor_id: UUID, mission_id: UUID, subject_id
         raise ContractError("validation_error", "instructions")
     if not isinstance(schedule_text, str) or len(schedule_text) > 500:
         raise ContractError("validation_error", "schedule_text")
+    if goal in (None, ""):
+        goal_value = None
+    elif isinstance(goal, str) and 1 <= len(goal.strip()) <= 500:
+        goal_value = goal.strip()
+    else:
+        raise ContractError("validation_error", "goal")
+    if body.get("start_at") in (None, ""):
+        raise ContractError("validation_error", "start_at")
+    start_at = require_due_timestamp(body["start_at"], "start_at")
+    review_at = None
+    if body.get("review_at") not in (None, ""):
+        review_at = require_due_timestamp(body["review_at"], "review_at")
+        if review_at < start_at:
+            raise ContractError("validation_error", "review_at")
     due_at = None
     if body.get("due_at") not in (None, ""):
         due_at = require_due_timestamp(body["due_at"], "due_at")
@@ -77,8 +92,11 @@ def create_order(session: Session, doctor_id: UUID, mission_id: UUID, subject_id
         doctor_id=doctor_id,
         kind=kind,
         title=title.strip(),
+        goal=goal_value,
         instructions=instructions.strip(),
         schedule_text=schedule_text.strip(),
+        start_at=start_at,
+        review_at=review_at,
         due_at=due_at,
         status="active",
         revision_no=1,
@@ -115,13 +133,35 @@ def revise_order(session: Session, doctor_id: UUID, order_id: UUID, body: dict[s
         raise ContractError("validation_error", "instructions")
     if not isinstance(schedule_text, str) or len(schedule_text) > 500:
         raise ContractError("validation_error", "schedule_text")
+    goal_value = order.goal
+    if "goal" in body:
+        goal = body.get("goal")
+        if goal in (None, ""):
+            goal_value = None
+        elif isinstance(goal, str) and 1 <= len(goal.strip()) <= 500:
+            goal_value = goal.strip()
+        else:
+            raise ContractError("validation_error", "goal")
+    start_at = order.start_at
+    if "start_at" in body:
+        if body.get("start_at") in (None, ""):
+            raise ContractError("validation_error", "start_at")
+        start_at = require_due_timestamp(body["start_at"], "start_at")
+    review_at = order.review_at
+    if "review_at" in body:
+        review_at = None if body.get("review_at") in (None, "") else require_due_timestamp(body["review_at"], "review_at")
+        if review_at is not None and review_at < start_at:
+            raise ContractError("validation_error", "review_at")
     due_at = order.due_at
     if "due_at" in body:
         due_at = None if body.get("due_at") in (None, "") else require_due_timestamp(body["due_at"], "due_at")
     now = datetime.now(timezone.utc)
     order.title = title.strip()
+    order.goal = goal_value
     order.instructions = instructions.strip()
     order.schedule_text = schedule_text.strip()
+    order.start_at = start_at
+    order.review_at = review_at
     order.due_at = due_at
     order.revision_no += 1
     order.revise_reason = reason.strip()
@@ -161,10 +201,15 @@ def apply_care_order_response_with_hash(
     order_id = require_uuid(payload.get("order_id"), "order_id")
     decision = payload.get("decision")
     note = payload.get("note")
+    link_note = payload.get("link_note")
+    activity_id = payload.get("activity_id")
     if decision not in CARE_DECISIONS:
         raise ContractError("validation_error", "decision")
     if note is not None and (not isinstance(note, str) or not 1 <= len(note) <= 1000):
         raise ContractError("validation_error", "note")
+    if link_note is not None and (not isinstance(link_note, str) or not 1 <= len(link_note) <= 300):
+        raise ContractError("validation_error", "link_note")
+    activity_uuid = None if activity_id in (None, "") else require_uuid(activity_id, "activity_id")
     recorded_at = require_timestamp(payload.get("recorded_at"), "recorded_at")
     created_at_device = require_timestamp(payload.get("created_at_device"), "created_at_device")
     response_id = require_uuid(payload.get("id"), "id")
@@ -189,6 +234,12 @@ def apply_care_order_response_with_hash(
         order.status = "completed"
         order.updated_at = datetime.now(timezone.utc)
         _event(session, order, "completed_by_crew", actor_id, note if isinstance(note, str) else None)
+    elif decision == "unable":
+        if order.status != "active":
+            raise ContractError("validation_error", "order_not_active")
+        order.status = "completed"
+        order.updated_at = datetime.now(timezone.utc)
+        _event(session, order, "unable_by_crew", actor_id, note if isinstance(note, str) else None)
     else:
         if order.status != "active":
             raise ContractError("validation_error", "order_not_active")
@@ -203,6 +254,8 @@ def apply_care_order_response_with_hash(
             mission_id=order.mission_id,
             decision=decision,
             note=None if note in (None, "") else note,
+            link_note=None if link_note in (None, "") else link_note,
+            activity_id=activity_uuid,
             recorded_at=recorded_at,
             created_at_device=created_at_device,
             operation_id=operation_id,
@@ -221,6 +274,16 @@ def validate_care_order_response(payload: dict[str, Any]) -> None:
     note = payload.get("note")
     if note is not None and (not isinstance(note, str) or not 1 <= len(note) <= 1000):
         raise ContractError("validation_error", "note")
+    link_note = payload.get("link_note")
+    if link_note is not None and (not isinstance(link_note, str) or not 1 <= len(link_note) <= 300):
+        raise ContractError("validation_error", "link_note")
+    if "link_note" not in payload:
+        raise ContractError("validation_error", "link_note")
+    if "activity_id" not in payload:
+        raise ContractError("validation_error", "activity_id")
+    activity_id = payload.get("activity_id")
+    if activity_id not in (None, ""):
+        require_uuid(activity_id, "activity_id")
     require_timestamp(payload.get("recorded_at"), "recorded_at")
     require_timestamp(payload.get("created_at_device"), "created_at_device")
     mission_id = optional_uuid(payload.get("mission_id"), "mission_id")
@@ -245,8 +308,11 @@ def _order_card(session: Session, order: CareOrder) -> dict[str, object]:
         "doctor_id": str(order.doctor_id),
         "kind": order.kind,
         "title": order.title,
+        "goal": order.goal,
         "instructions": order.instructions,
         "schedule_text": order.schedule_text,
+        "start_at": order.start_at.isoformat(),
+        "review_at": None if order.review_at is None else order.review_at.isoformat(),
         "due_at": None if order.due_at is None else order.due_at.isoformat(),
         "status": order.status,
         "revision_no": order.revision_no,
@@ -271,6 +337,8 @@ def _order_card(session: Session, order: CareOrder) -> dict[str, object]:
                 "id": str(row.id),
                 "decision": row.decision,
                 "note": row.note,
+                "link_note": getattr(row, "link_note", None),
+                "activity_id": None if getattr(row, "activity_id", None) is None else str(row.activity_id),
                 "recorded_at": row.recorded_at.isoformat(),
             }
             for row in responses

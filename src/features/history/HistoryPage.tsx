@@ -4,6 +4,7 @@ import { useSession } from '../../app/session.tsx'
 import { Button } from '../../components/ui.tsx'
 import { formatZoned, localDateInZone } from '../../domain/clock.ts'
 import { explanationCard } from '../../domain/explanations.ts'
+import { aggregateDailyFluidMl } from '../../domain/nutritionAggregation.ts'
 import { comparisonText, fatigueSeries, pulseSeries, sleepSeries } from '../../domain/trends.ts'
 import { db } from '../../data/local/db.ts'
 import { listCheckins, listMeasurements } from '../../data/local/journal.ts'
@@ -103,10 +104,34 @@ export function HistoryPage() {
   const historyCard = compared.status === 'compared' && comparedSeries
     ? explanationCard('HISTORY_CHANGE_V1', [{ label: comparedSeries.metric, href: '/onboard/history' }], new Date().toISOString())
     : null
+  const fluidWindows = rangedCheckins
+    .filter((item) => !item.invalidated && item.type === 'daily')
+    .map((item) => latestRevision.get(item.id)?.general_payload.nutrition)
+    .filter((nutrition): nutrition is NonNullable<typeof nutrition> => Boolean(nutrition))
+    .filter((nutrition) => nutrition.section_status === 'filled' && nutrition.period_start && nutrition.period_end)
+    .map((nutrition) => ({
+      period_start: nutrition.period_start as string,
+      period_end: nutrition.period_end as string,
+      fluid_ml: nutrition.fluid_ml,
+      fluid_answer_status: nutrition.fluid_answer_status,
+    }))
+  const fluidResult = aggregateDailyFluidMl(fluidWindows)
+  const fluidAgg = fluidResult.ok ? fluidResult : null
 
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-3xl">{t(locale, 'history')}</h1>
+      <p className="text-sm text-muted">{t(locale, 'nutritionHistoryOverlapHint')}</p>
+      {fluidAgg ? (
+        <p className="text-sm text-muted">
+          {locale === 'ru' ? 'Жидкость за период (без двойного счёта)' : 'Fluid for range (no double count)'}: {fluidAgg.total_ml} mL
+          {fluidAgg.overlapped
+            ? locale === 'ru'
+              ? ' · были пересечения окон'
+              : ' · overlapping windows present'
+            : ''}
+        </p>
+      ) : null}
       <div className="grid gap-3 lg:grid-cols-3">
         <TrendChart series={sleep} locale={locale} />
         <TrendChart series={fatigue} locale={locale} />

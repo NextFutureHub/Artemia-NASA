@@ -59,17 +59,18 @@ export function OnboardShell() {
   return (
     <div className="min-h-screen md:grid md:grid-cols-[232px_1fr]">
       <aside className={`${open ? 'flex' : 'hidden'} min-h-screen flex-col border-r border-line bg-surface p-4 md:flex`}>
-        <p className="text-xl">{t(locale, 'appName')}</p>
+        <p className="text-xl tracking-tight">{t(locale, 'appName')}</p>
         <nav id="board-menu" className="mt-6 flex flex-1 flex-col gap-1" aria-label={t(locale, 'menu')}>
           <ShellLink to="/onboard/today" label={t(locale, 'today')} onNavigate={() => setOpen(false)} />
           <ShellLink to="/onboard/measurements" label={t(locale, 'measurements')} onNavigate={() => setOpen(false)} />
+          <ShellLink to="/onboard/activity" label={t(locale, 'activityNav')} onNavigate={() => setOpen(false)} />
           <ShellLink to="/onboard/orders" label={t(locale, 'careOrders')} onNavigate={() => setOpen(false)} />
           <ShellLink to="/onboard/history" label={t(locale, 'history')} onNavigate={() => setOpen(false)} />
           <ShellLink to="/onboard/reports" label={t(locale, 'reports')} onNavigate={() => setOpen(false)} />
         </nav>
         <div className="flex flex-col gap-1">
           <ShellLink to="/evidence" label={t(locale, 'sources')} onNavigate={() => setOpen(false)} />
-          <ShellLink to="/onboard/profile" label={t(locale, 'settings')} onNavigate={() => setOpen(false)} />
+          <ShellLink to="/onboard/profile" label={t(locale, 'profile')} onNavigate={() => setOpen(false)} />
           <button type="button" className="min-h-11 rounded-xl px-3 text-left" onClick={() => setSignOutOpen(true)}>
             {t(locale, 'logout')}
           </button>
@@ -89,13 +90,13 @@ export function OnboardShell() {
             <p className="numeric text-sm text-muted">
               {dayText ? `${dayText} · ` : ''}
               {formatUtcClock(now)}
+              {session.profile?.callsign ? ` · ${session.profile.callsign}` : ''}
             </p>
           </div>
-          <button type="button" className="min-h-11 text-left text-sm" onClick={() => navigate('/onboard/sync')}>
+          <button type="button" className="min-h-11 shrink-0 text-left text-sm" onClick={() => navigate('/onboard/sync')}>
             <StatusMark state={session.connection} /> {connectionText}
+            <span className="mt-0.5 block numeric text-muted">{t(locale, 'queueCount', { count: session.pending })}</span>
           </button>
-          <p className="numeric hidden text-sm text-muted sm:block">{t(locale, 'queueCount', { count: session.pending })}</p>
-          <p className="hidden text-sm md:block">{session.profile?.callsign}</p>
         </header>
         {environmentId === 'demo' ? (
           <p className="border-b border-line px-4 py-2 text-sm text-attention">{t(locale, 'demo')}</p>

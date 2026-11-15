@@ -36,9 +36,9 @@ export type ServerHistoryCheckin = {
 
 export type ServerHistoryMeasurement = {
   id: string
-  metric: 'heart_rate' | 'temperature' | 'spo2'
+  metric: 'heart_rate' | 'temperature' | 'spo2' | 'body_mass'
   value: number | null
-  unit: 'bpm' | 'celsius' | 'percent'
+  unit: 'bpm' | 'celsius' | 'percent' | 'kg'
   source: 'manual' | 'usb' | 'simulated'
   quality: 'unknown' | 'valid' | 'invalid' | 'insufficient'
   quality_reasons: string[]

@@ -11,6 +11,9 @@ export const careOrderResponsePayloadSchema = z.strictObject({
   mission_id: uuidSchema,
   decision: z.enum(CARE_ORDER_DECISIONS),
   note: z.string().min(1).max(1000).nullable(),
+  link_note: z.string().min(1).max(300).nullable(),
+  /** Shared with activity payload id when completing a workout care task (E10). */
+  activity_id: uuidSchema.nullable(),
   recorded_at: timestampSchema,
   created_at_device: timestampSchema,
 })
@@ -25,8 +28,11 @@ export const careOrderCardSchema = z.object({
   doctor_id: uuidSchema,
   kind: z.enum(CARE_ORDER_KINDS),
   title: z.string().min(1).max(120),
+  goal: z.string().max(500).nullable().optional(),
   instructions: z.string().min(1).max(3000),
   schedule_text: z.string().max(500),
+  start_at: timestampSchema.nullable().optional(),
+  review_at: timestampSchema.nullable().optional(),
   due_at: timestampSchema.nullable(),
   status: z.enum(CARE_ORDER_STATUSES),
   revision_no: z.number().int().min(1),
@@ -50,6 +56,7 @@ export const careOrderCardSchema = z.object({
       id: uuidSchema,
       decision: z.enum(CARE_ORDER_DECISIONS),
       note: z.string().nullable(),
+      link_note: z.string().nullable().optional(),
       recorded_at: timestampSchema,
     }),
   ),
@@ -71,6 +78,8 @@ export function buildCareOrderResponse(input: {
   missionId: string
   decision: (typeof CARE_ORDER_DECISIONS)[number]
   note: string | null
+  linkNote?: string | null
+  activityId?: string | null
   recordedAt: string
   createdAtDevice: string
 }): { payload: CareOrderResponsePayload | null; issues: string[] } {
@@ -80,6 +89,8 @@ export function buildCareOrderResponse(input: {
     mission_id: input.missionId,
     decision: input.decision,
     note: input.note,
+    link_note: input.linkNote ?? null,
+    activity_id: input.activityId ?? null,
     recorded_at: input.recordedAt,
     created_at_device: input.createdAtDevice,
   })

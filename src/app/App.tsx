@@ -13,6 +13,7 @@ import { PreparePage } from '../features/prepare/PreparePage.tsx'
 import { ProfilePage } from '../features/profile/ProfilePage.tsx'
 import { OnboardShell } from '../features/shell/OnboardShell.tsx'
 import { ConnectionPage } from '../features/sync/ConnectionPage.tsx'
+import { ActivityPage } from '../features/activity/ActivityPage.tsx'
 import { OrdersPage } from '../features/orders/OrdersPage.tsx'
 import { TodayPage } from '../features/today/TodayPage.tsx'
 
@@ -36,6 +37,7 @@ export default function App() {
               <Route path="/onboard/checkin/new" element={<CheckinPage />} />
               <Route path="/onboard/checkin/:id" element={<CheckinViewPage />} />
               <Route path="/onboard/measurements" element={<MeasurementsPage />} />
+              <Route path="/onboard/activity" element={<ActivityPage />} />
               <Route path="/onboard/history" element={<HistoryPage />} />
               <Route path="/onboard/orders" element={<OrdersPage />} />
               <Route path="/onboard/reports" element={<ReportsPage />} />

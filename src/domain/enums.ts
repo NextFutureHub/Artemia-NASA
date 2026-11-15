@@ -72,20 +72,58 @@ export const CARE_ORDER_KINDS = [
   'recommendation',
   'symptom_monitor',
   'follow_up',
+  'workout',
 ] as const
 export type CareOrderKind = (typeof CARE_ORDER_KINDS)[number]
 
 export const CARE_ORDER_STATUSES = ['active', 'cancelled', 'completed'] as const
 export type CareOrderStatus = (typeof CARE_ORDER_STATUSES)[number]
 
-export const CARE_ORDER_DECISIONS = ['done', 'skipped', 'acknowledged'] as const
+export const CARE_ORDER_DECISIONS = ['done', 'skipped', 'acknowledged', 'unable'] as const
 export type CareOrderDecision = (typeof CARE_ORDER_DECISIONS)[number]
 
 export const CHECKIN_TYPES = ['daily', 'change'] as const
 export type CheckinType = (typeof CHECKIN_TYPES)[number]
 
-export const METRICS = ['heart_rate', 'temperature', 'spo2'] as const
+export const METRICS = ['heart_rate', 'temperature', 'spo2', 'body_mass'] as const
 export type Metric = (typeof METRICS)[number]
+
+export const SLEEPINESS_VALUES = ['none', 'mild', 'marked'] as const
+export type Sleepiness = (typeof SLEEPINESS_VALUES)[number]
+
+export const AWAKENINGS_VALUES = ['none', 'occurred', 'unknown'] as const
+export type Awakenings = (typeof AWAKENINGS_VALUES)[number]
+
+export const SLEEP_PLAN_DEVIATION = ['no', 'yes', 'no_plan', 'unknown'] as const
+export type SleepPlanDeviation = (typeof SLEEP_PLAN_DEVIATION)[number]
+
+export const SLEEP_INTERFERING = ['noise', 'light', 'tasks', 'discomfort', 'other'] as const
+export type SleepInterfering = (typeof SLEEP_INTERFERING)[number]
+
+export const SLEEP_INTERVAL_KINDS = ['primary', 'additional'] as const
+export type SleepIntervalKind = (typeof SLEEP_INTERVAL_KINDS)[number]
+
+export const SLEEP_INTERVAL_QUALITIES = ['slept', 'in_bed'] as const
+export type SleepIntervalQuality = (typeof SLEEP_INTERVAL_QUALITIES)[number]
+
+/** Which sleep duration source counts for totals — never sum both. */
+export const SLEEP_DURATION_SOURCES = ['overall', 'intervals'] as const
+export type SleepDurationSource = (typeof SLEEP_DURATION_SOURCES)[number]
+
+export const SECTION_FILL = ['filled', 'skipped', 'not_applicable'] as const
+export type SectionFill = (typeof SECTION_FILL)[number]
+
+export const APPETITE_VALUES = ['usual', 'decreased', 'increased'] as const
+export type Appetite = (typeof APPETITE_VALUES)[number]
+
+export const MEAL_PLAN_VALUES = ['full', 'partial', 'not_done', 'no_plan', 'unknown'] as const
+export type MealPlan = (typeof MEAL_PLAN_VALUES)[number]
+
+export const NUTRITION_DEVIATION = ['no_appetite', 'nausea', 'no_time', 'other', 'declined'] as const
+export type NutritionDeviation = (typeof NUTRITION_DEVIATION)[number]
+
+export const FLUID_COMPLETENESS = ['full', 'partial', 'unknown'] as const
+export type FluidCompleteness = (typeof FLUID_COMPLETENESS)[number]
 
 export const MEASUREMENT_SOURCES = ['manual', 'usb', 'simulated'] as const
 export type MeasurementSource = (typeof MEASUREMENT_SOURCES)[number]

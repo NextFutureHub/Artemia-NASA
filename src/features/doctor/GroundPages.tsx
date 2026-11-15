@@ -58,8 +58,8 @@ export function GroundShell() {
     <div className="min-h-screen">
       <header className="flex h-16 flex-wrap items-center justify-between gap-3 border-b border-line px-4">
         <div>
-          <p className="text-sm text-attention">{t(session.locale, 'demo')}</p>
-          <p>{t(session.locale, 'groundTitle')}</p>
+          <p className="text-xl">{t(session.locale, 'groundTitle')}</p>
+          <p className="text-sm text-muted">{t(session.locale, 'demo')}</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <fieldset className="flex items-center gap-2 text-sm">
@@ -143,9 +143,12 @@ export function InboxPage() {
   })
 
   return (
-    <section className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-3xl">{t(locale, 'groundReports')}</h1>
+    <section className="flex flex-col gap-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-3xl">{t(locale, 'groundReports')}</h1>
+          <p className="mt-1 text-muted">{t(locale, 'inboxLead')}</p>
+        </div>
         <Button type="button" variant="secondary" onClick={() => void reload()}>{t(locale, 'refresh')}</Button>
       </div>
       {mode === 'stale' && slice ? <Banner tone="attention">{t(locale, 'staleSlice', { time: clockLabel(slice.capturedAt, locale) })}</Banner> : null}
@@ -153,47 +156,64 @@ export function InboxPage() {
       {mode === 'denied' ? <Banner tone="danger">{t(locale, 'accessDenied')}</Banner> : null}
       {mode === 'live' && slice ? <p className="text-sm text-muted">{t(locale, 'updatedAt')} {clockLabel(slice.capturedAt, locale)}</p> : null}
       {slice ? (
-        <div className="grid gap-3 sm:grid-cols-3">
-          <p>{t(locale, 'newReports')}: {slice.data.counts.new_reports}</p>
-          <p>{t(locale, 'reviewCount')}: {slice.data.counts.review_requested}</p>
-          <p>{t(locale, 'repliesSent')}: {slice.data.counts.replied}</p>
+        <div className="rounded-xl border border-line px-4 py-3">
+          <p className="text-sm text-muted">{t(locale, 'inboxCounts')}</p>
+          <p className="mt-1 text-sm">
+            {t(locale, 'newReports')}: {slice.data.counts.new_reports}
+            {' · '}
+            {t(locale, 'reviewCount')}: {slice.data.counts.review_requested}
+            {' · '}
+            {t(locale, 'repliesSent')}: {slice.data.counts.replied}
+          </p>
+          <p className="mt-2 text-sm text-muted">{t(locale, 'noTriage')}</p>
         </div>
       ) : null}
-      <p className="text-sm text-muted">{t(locale, 'noTriage')}</p>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-end gap-3">
         <Field id="patient" label={t(locale, 'patientFilter')}>
           <input id="patient" value={patient} onChange={(event) => setPatient(event.target.value)} className="min-h-11 rounded-xl border border-line bg-canvas px-3" />
         </Field>
-        <select className="min-h-11 rounded-xl border border-line bg-canvas px-3" value={work} onChange={(event) => setWork(event.target.value as typeof work)}>
-          <option value="all">{t(locale, 'filterAll')}</option>
-          <option value="not_opened">{t(locale, 'notOpened')}</option>
-          <option value="opened">{t(locale, 'opened')}</option>
-          <option value="replied">{t(locale, 'replied')}</option>
-        </select>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-muted">{t(locale, 'state')}</span>
+          <select className="min-h-11 rounded-xl border border-line bg-canvas px-3" value={work} onChange={(event) => setWork(event.target.value as typeof work)}>
+            <option value="all">{t(locale, 'workAll')}</option>
+            <option value="not_opened">{t(locale, 'notOpened')}</option>
+            <option value="opened">{t(locale, 'opened')}</option>
+            <option value="replied">{t(locale, 'replied')}</option>
+          </select>
+        </label>
         <label className="flex min-h-11 items-center gap-2">
           <input type="checkbox" checked={reviewOnly} onChange={(event) => setReviewOnly(event.target.checked)} />
           {t(locale, 'withReview')}
         </label>
       </div>
       {items.length === 0 && mode === 'live' ? <p className="text-muted">{t(locale, 'noReports')}</p> : null}
-      <div className="grid gap-4 lg:grid-cols-[1fr_240px]">
+      <div className="grid gap-4 lg:grid-cols-[1fr_220px]">
         <ul className="flex flex-col gap-2">
           {items.map((item) => (
             <li key={item.report_id}>
               <Link className="block rounded-xl border border-line bg-surface p-4" to={`/ground/reports/${item.report_id}?mission=${item.mission_id}`}>
-                <p>{item.callsign}</p>
-                <p>{item.title}</p>
-                <p className="text-sm text-muted">{item.range_start} — {item.range_end}</p>
-                <p className="text-sm">{item.requested_review ? t(locale, 'reviewCount') : t(locale, 'planned')} · {item.doctor_work} · {item.received_at}</p>
+                <p className="text-lg">{item.callsign}</p>
+                <p className="text-muted">{item.title}</p>
+                <p className="mt-2 text-sm text-muted">{item.range_start} — {item.range_end}</p>
+                <p className="mt-1 text-sm text-muted">
+                  {item.requested_review ? t(locale, 'reviewCount') : t(locale, 'plannedQuiet')}
+                  {' · '}
+                  {doctorWorkLabel(locale, item.doctor_work)}
+                  {' · '}
+                  <span className="numeric">{item.received_at}</span>
+                </p>
               </Link>
             </li>
           ))}
         </ul>
         {items[0] ? (
-          <aside className="rounded-xl border border-line p-4">
-            <p>{items[0].callsign}</p>
+          <aside className="h-fit rounded-xl border border-line p-4">
+            <p className="text-sm text-muted">{t(locale, 'openPatient')}</p>
+            <p className="mt-1">{items[0].callsign}</p>
             <p className="text-sm text-muted">{items[0].display_name}</p>
-            <Link className="mt-3 inline-flex min-h-11 items-center" to={`/ground/crew/${items[0].subject_id}?mission=${items[0].mission_id}`}>{t(locale, 'openPatient')}</Link>
+            <Link className="mt-3 inline-flex min-h-11 items-center text-accent" to={`/ground/crew/${items[0].subject_id}?mission=${items[0].mission_id}`}>
+              {t(locale, 'openPatient')}
+            </Link>
           </aside>
         ) : null}
       </div>
@@ -280,11 +300,15 @@ export function GroundReportPage() {
         {card ? (
           <>
             <h1 className="text-3xl">{card.title}</h1>
-            <p>{card.callsign} · {card.display_name}</p>
-            <p className="text-sm">{card.integrity === 'match' ? t(locale, 'integrityMatch') : t(locale, 'integrityMismatch')}</p>
+            <p className="text-muted">{card.callsign} · {card.display_name}</p>
+            <p className="text-sm text-muted">{card.integrity === 'match' ? t(locale, 'integrityMatch') : t(locale, 'integrityMismatch')}</p>
             <p className="numeric text-sm text-muted">{card.general_hash}</p>
-            <p>{card.received_at} · {card.doctor_work}</p>
-            <p>{card.general_snapshot.summary}</p>
+            <p className="text-sm">
+              <span className="numeric text-muted">{card.received_at}</span>
+              {' · '}
+              {doctorWorkLabel(locale, card.doctor_work)}
+            </p>
+            <p className="mt-2">{card.general_snapshot.summary}</p>
             {(card.general_snapshot.measurements ?? []).length > 0 ? (
               <ul className="mt-2">
                 {(card.general_snapshot.measurements ?? []).map((row) => {
@@ -342,8 +366,11 @@ type CareOrderItem = {
   id: string
   kind: string
   title: string
+  goal: string | null
   instructions: string
   schedule_text: string
+  start_at: string | null
+  review_at: string | null
   due_at: string | null
   status: string
   revision_no: number
@@ -370,8 +397,11 @@ export function CrewPage() {
   const [busy, setBusy] = useState(false)
   const [kind, setKind] = useState<(typeof CARE_ORDER_KINDS)[number]>('measurement')
   const [title, setTitle] = useState('')
+  const [goal, setGoal] = useState('')
   const [instructions, setInstructions] = useState('')
   const [scheduleText, setScheduleText] = useState('')
+  const [startAt, setStartAt] = useState('')
+  const [reviewAt, setReviewAt] = useState('')
   const [dueAt, setDueAt] = useState('')
   const [editId, setEditId] = useState<string | null>(null)
   const [reason, setReason] = useState('')
@@ -389,7 +419,7 @@ export function CrewPage() {
       return
     }
     setOrdersError(null)
-    setOrders(response.body.items.filter(isCareOrderItem))
+    setOrders(response.body.items.filter(isCareOrderItem).map(normalizeCareOrder))
   }
 
   useEffect(() => {
@@ -419,8 +449,11 @@ export function CrewPage() {
       body: {
         kind,
         title: title.trim(),
+        goal: goal.trim() || null,
         instructions: instructions.trim(),
         schedule_text: scheduleText.trim(),
+        start_at: startAt ? new Date(startAt).toISOString() : new Date().toISOString(),
+        review_at: reviewAt ? new Date(reviewAt).toISOString() : null,
         due_at: dueAt ? new Date(dueAt).toISOString() : null,
       },
     })
@@ -428,8 +461,11 @@ export function CrewPage() {
     if (response.status === 200) {
       setNotice(t(locale, 'careSaved'))
       setTitle('')
+      setGoal('')
       setInstructions('')
       setScheduleText('')
+      setStartAt('')
+      setReviewAt('')
       setDueAt('')
       await reloadOrders()
       return
@@ -446,8 +482,11 @@ export function CrewPage() {
       body: {
         reason: reason.trim(),
         title: title.trim() || undefined,
+        goal: goal.trim() || null,
         instructions: instructions.trim() || undefined,
         schedule_text: scheduleText.trim(),
+        start_at: startAt ? new Date(startAt).toISOString() : undefined,
+        review_at: reviewAt ? new Date(reviewAt).toISOString() : null,
         due_at: dueAt ? new Date(dueAt).toISOString() : null,
       },
     })
@@ -456,6 +495,13 @@ export function CrewPage() {
       setNotice(t(locale, 'careSaved'))
       setEditId(null)
       setReason('')
+      setTitle('')
+      setGoal('')
+      setInstructions('')
+      setScheduleText('')
+      setStartAt('')
+      setReviewAt('')
+      setDueAt('')
       await reloadOrders()
       return
     }
@@ -528,16 +574,25 @@ export function CrewPage() {
             <Field id="care-title" label={t(locale, 'careTitle')}>
               <input id="care-title" className="min-h-11 rounded-xl border border-line bg-canvas px-3" maxLength={120} value={title} onChange={(event) => setTitle(event.target.value)} required />
             </Field>
+            <Field id="care-goal" label={t(locale, 'careGoal')}>
+              <input id="care-goal" className="min-h-11 rounded-xl border border-line bg-canvas px-3" maxLength={500} value={goal} onChange={(event) => setGoal(event.target.value)} />
+            </Field>
             <Field id="care-instructions" label={t(locale, 'careInstructions')}>
               <textarea id="care-instructions" className="min-h-24 rounded-xl border border-line bg-canvas px-3 py-2" maxLength={3000} value={instructions} onChange={(event) => setInstructions(event.target.value)} required />
             </Field>
             <Field id="care-schedule" label={t(locale, 'careSchedule')}>
               <input id="care-schedule" className="min-h-11 rounded-xl border border-line bg-canvas px-3" maxLength={500} value={scheduleText} onChange={(event) => setScheduleText(event.target.value)} />
             </Field>
+            <Field id="care-start" label={t(locale, 'careStart')}>
+              <input id="care-start" type="datetime-local" className="min-h-11 rounded-xl border border-line bg-canvas px-3" value={startAt} onChange={(event) => setStartAt(event.target.value)} required />
+            </Field>
+            <Field id="care-review" label={t(locale, 'careReview')}>
+              <input id="care-review" type="datetime-local" className="min-h-11 rounded-xl border border-line bg-canvas px-3" value={reviewAt} onChange={(event) => setReviewAt(event.target.value)} />
+            </Field>
             <Field id="care-due" label={t(locale, 'careDue')}>
               <input id="care-due" type="datetime-local" className="min-h-11 rounded-xl border border-line bg-canvas px-3" value={dueAt} onChange={(event) => setDueAt(event.target.value)} />
             </Field>
-            <Button type="submit" disabled={busy || title.trim().length === 0 || instructions.trim().length === 0}>
+            <Button type="submit" disabled={busy || title.trim().length === 0 || instructions.trim().length === 0 || startAt.trim().length === 0}>
               {t(locale, 'careCreate')}
             </Button>
           </form>
@@ -549,17 +604,42 @@ export function CrewPage() {
               <p className="text-sm text-muted">
                 {careKindLabel(locale, order.kind)} · {careStatusLabel(locale, order.status)} · rev {order.revision_no}
               </p>
+              {order.goal ? <p className="mt-2 text-sm">{t(locale, 'careGoal')}: {order.goal}</p> : null}
               <p className="mt-2">{order.instructions}</p>
               {order.schedule_text ? <p className="mt-2 text-sm">{t(locale, 'careSchedule')}: {order.schedule_text}</p> : null}
+              {order.start_at ? <p className="numeric mt-1 text-sm text-muted">{t(locale, 'careStart')}: {clockLabel(order.start_at, locale)}</p> : null}
+              {order.review_at ? <p className="numeric mt-1 text-sm text-muted">{t(locale, 'careReview')}: {clockLabel(order.review_at, locale)}</p> : null}
               {order.due_at ? <p className="numeric mt-1 text-sm text-muted">{t(locale, 'careDue')}: {clockLabel(order.due_at, locale)}</p> : null}
               <CareExecution locale={locale} order={order} />
               {editId === order.id ? (
-                <div className="mt-3 flex flex-col gap-2">
+                <div className="mt-3 flex flex-col gap-2 rounded-xl border border-dashed border-line p-3">
+                  <p className="text-sm text-muted">{t(locale, 'careRevise')}</p>
+                  <Field id={`revise-title-${order.id}`} label={t(locale, 'careTitle')}>
+                    <input id={`revise-title-${order.id}`} className="min-h-11 rounded-xl border border-line bg-canvas px-3" maxLength={120} value={title} onChange={(event) => setTitle(event.target.value)} />
+                  </Field>
+                  <Field id={`revise-goal-${order.id}`} label={t(locale, 'careGoal')}>
+                    <input id={`revise-goal-${order.id}`} className="min-h-11 rounded-xl border border-line bg-canvas px-3" maxLength={500} value={goal} onChange={(event) => setGoal(event.target.value)} />
+                  </Field>
+                  <Field id={`revise-instructions-${order.id}`} label={t(locale, 'careInstructions')}>
+                    <textarea id={`revise-instructions-${order.id}`} className="min-h-24 rounded-xl border border-line bg-canvas px-3 py-2" maxLength={3000} value={instructions} onChange={(event) => setInstructions(event.target.value)} />
+                  </Field>
+                  <Field id={`revise-schedule-${order.id}`} label={t(locale, 'careSchedule')}>
+                    <input id={`revise-schedule-${order.id}`} className="min-h-11 rounded-xl border border-line bg-canvas px-3" maxLength={500} value={scheduleText} onChange={(event) => setScheduleText(event.target.value)} />
+                  </Field>
+                  <Field id={`revise-start-${order.id}`} label={t(locale, 'careStart')}>
+                    <input id={`revise-start-${order.id}`} type="datetime-local" className="min-h-11 rounded-xl border border-line bg-canvas px-3" value={startAt} onChange={(event) => setStartAt(event.target.value)} />
+                  </Field>
+                  <Field id={`revise-review-${order.id}`} label={t(locale, 'careReview')}>
+                    <input id={`revise-review-${order.id}`} type="datetime-local" className="min-h-11 rounded-xl border border-line bg-canvas px-3" value={reviewAt} onChange={(event) => setReviewAt(event.target.value)} />
+                  </Field>
+                  <Field id={`revise-due-${order.id}`} label={t(locale, 'careDue')}>
+                    <input id={`revise-due-${order.id}`} type="datetime-local" className="min-h-11 rounded-xl border border-line bg-canvas px-3" value={dueAt} onChange={(event) => setDueAt(event.target.value)} />
+                  </Field>
                   <Field id={`reason-${order.id}`} label={t(locale, 'careReason')}>
                     <textarea id={`reason-${order.id}`} className="min-h-20 rounded-xl border border-line bg-canvas px-3 py-2" maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} />
                   </Field>
                   <div className="flex flex-wrap gap-2">
-                    <Button disabled={busy || reason.trim().length === 0} onClick={() => void reviseOrder(order.id)}>
+                    <Button disabled={busy || reason.trim().length === 0 || startAt.trim().length === 0} onClick={() => void reviseOrder(order.id)}>
                       {t(locale, 'careRevise')}
                     </Button>
                     <Button variant="danger" disabled={busy || reason.trim().length === 0} onClick={() => void cancelOrder(order.id)}>
@@ -577,9 +657,12 @@ export function CrewPage() {
                   onClick={() => {
                     setEditId(order.id)
                     setTitle(order.title)
+                    setGoal(order.goal ?? '')
                     setInstructions(order.instructions)
                     setScheduleText(order.schedule_text)
-                    setDueAt(order.due_at ? order.due_at.slice(0, 16) : '')
+                    setStartAt(toDatetimeLocalInput(order.start_at))
+                    setReviewAt(toDatetimeLocalInput(order.review_at))
+                    setDueAt(toDatetimeLocalInput(order.due_at))
                     setReason('')
                   }}
                 >
@@ -644,8 +727,33 @@ function isCareOrderItem(value: unknown): value is CareOrderItem {
   )
 }
 
+function normalizeCareOrder(value: CareOrderItem): CareOrderItem {
+  return {
+    ...value,
+    goal: typeof value.goal === 'string' ? value.goal : null,
+    start_at: typeof value.start_at === 'string' ? value.start_at : null,
+    review_at: typeof value.review_at === 'string' ? value.review_at : null,
+  }
+}
+
+function doctorWorkLabel(locale: 'ru' | 'en', work: string): string {
+  if (work === 'not_opened') return t(locale, 'notOpened')
+  if (work === 'opened') return t(locale, 'opened')
+  if (work === 'replied') return t(locale, 'replied')
+  return work
+}
+
 function clockLabel(iso: string, locale: string): string {
   return new Date(iso).toLocaleTimeString(locale === 'ru' ? 'ru-RU' : 'en-GB', { hour: '2-digit', minute: '2-digit' })
+}
+
+/** ISO → datetime-local value without inventing a timezone shift beyond the stored stamp prefix. */
+function toDatetimeLocalInput(iso: string | null): string {
+  if (!iso) return ''
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return iso.slice(0, 16)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

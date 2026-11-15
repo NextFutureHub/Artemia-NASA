@@ -8,7 +8,7 @@ const missionId = '22222222-2222-4222-8222-222222222222'
 const responseId = '33333333-3333-4333-8333-333333333333'
 const recordedAt = '2026-11-15T10:00:00.000Z'
 
-test('care order response schema accepts done/skip/ack and rejects empty note strings', () => {
+test('care order response schema accepts done/skip/ack/unable and rejects empty note strings', () => {
   const done = buildCareOrderResponse({
     id: responseId,
     orderId,
@@ -20,6 +20,7 @@ test('care order response schema accepts done/skip/ack and rejects empty note st
   })
   assert.ok(done.payload)
   assert.equal(done.payload?.decision, 'done')
+  assert.equal(done.payload?.link_note, null)
 
   const skipped = buildCareOrderResponse({
     id: responseId,
@@ -42,6 +43,19 @@ test('care order response schema accepts done/skip/ack and rejects empty note st
     createdAtDevice: recordedAt,
   })
   assert.ok(ack.payload)
+
+  const unable = buildCareOrderResponse({
+    id: responseId,
+    orderId,
+    missionId,
+    decision: 'unable',
+    note: 'No equipment',
+    linkNote: null,
+    recordedAt,
+    createdAtDevice: recordedAt,
+  })
+  assert.ok(unable.payload)
+  assert.equal(unable.payload?.decision, 'unable')
 
   const bad = buildCareOrderResponse({
     id: responseId,

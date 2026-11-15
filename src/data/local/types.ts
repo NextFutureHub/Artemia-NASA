@@ -1,3 +1,4 @@
+import type { ActivityPayload } from '../../domain/activityPayload.ts'
 import type { GeneralPayload } from '../../domain/generalPayload.ts'
 import type { PersonalPayload } from '../../domain/personalPayload.ts'
 import type { CheckinDraftValues, CheckinStep } from '../../domain/checkinDraft.ts'
@@ -155,10 +156,10 @@ export type LocalMeasurement = {
   mission_id: string
   metric: Metric
   value: number | null
-  unit: 'bpm' | 'celsius' | 'percent'
+  unit: 'bpm' | 'celsius' | 'percent' | 'kg'
   /** Original typed value before conversion to base units. */
   input_value: number | null
-  input_unit: 'bpm' | 'celsius' | 'fahrenheit' | 'percent' | null
+  input_unit: 'bpm' | 'celsius' | 'fahrenheit' | 'percent' | 'kg' | 'lb' | null
   source: MeasurementSource
   quality: MeasurementQuality
   quality_reasons: string[]
@@ -308,8 +309,11 @@ export type LocalCareOrder = {
   doctor_id: string
   kind: CareOrderKind
   title: string
+  goal: string | null
   instructions: string
   schedule_text: string
+  start_at: string | null
+  review_at: string | null
   due_at: string | null
   status: CareOrderStatus
   revision_no: number
@@ -322,6 +326,21 @@ export type LocalCareOrder = {
   last_decision: CareOrderDecision | null
   last_note: string | null
   last_response_at: string | null
+}
+
+/** Offline activity journal row. Server sync of bare activity ops is not shipped yet. */
+export type LocalActivity = {
+  id: string
+  owner_id: string
+  environment_id: string
+  operation_id: string
+  mission_id: string
+  payload: ActivityPayload
+  schema_version: 1
+  delivery: LocalDelivery
+  payload_hash: string
+  created_at_device: string
+  care_response_operation_id: string | null
 }
 
 export type OwnedRow = { owner_id: string; environment_id: string }

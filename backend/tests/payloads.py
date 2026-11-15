@@ -5,13 +5,50 @@ MISSION_ID = UUID("10000000-0000-4000-8000-000000000010")
 ASSIGNMENT_MIRA = UUID("10000000-0000-4000-8000-000000000021")
 
 
+def skipped_nutrition(status: str = "skipped"):
+    return {
+        "section_status": status,
+        "appetite": None,
+        "appetite_answer_status": "not_applicable",
+        "meal_plan": None,
+        "meal_plan_answer_status": "not_applicable",
+        "missed_meals": None,
+        "missed_meals_answer_status": "not_applicable",
+        "deviation_reason": None,
+        "deviation_reason_answer_status": "not_applicable",
+        "fluid_ml": None,
+        "fluid_answer_status": "not_applicable",
+        "fluid_completeness": None,
+        "comment": None,
+        "period_start": None,
+        "period_end": None,
+    }
+
+
 def base_general(**patch):
     payload = {
         "overall_state": "fair",
+        "report_period": {
+            "start_at": "2026-10-31T08:00:00.000Z",
+            "end_at": RECORDED_AT,
+        },
         "sleep_hours": 7.5,
         "sleep_answer_status": "answered",
         "sleep_quality": None,
         "sleep_quality_answer_status": "unknown",
+        "sleepiness": None,
+        "sleepiness_answer_status": "declined",
+        "awakenings": None,
+        "awakenings_answer_status": "declined",
+        "sleep_plan_deviation": None,
+        "sleep_plan_deviation_answer_status": "declined",
+        "sleep_interfering": [],
+        "sleep_interfering_answer_status": "declined",
+        "sleep_discuss": None,
+        "sleep_discuss_answer_status": "declined",
+        "sleep_comment": None,
+        "sleep_intervals": [],
+        "sleep_duration_source": None,
         "fatigue_score": 0,
         "fatigue_answer_status": "answered",
         "stress_score": None,
@@ -19,6 +56,7 @@ def base_general(**patch):
         "emotional_state": {"value": "calm", "note": None},
         "context": [],
         "comment": "Самочувствие",
+        "nutrition": skipped_nutrition(),
         "symptom_presence": "no",
         "symptoms": [],
         "review_requested": False,

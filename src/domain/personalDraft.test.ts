@@ -14,6 +14,7 @@ test('turning the personal step off leaves a normal check-in payload', () => {
   values.emotional = 'calm'
   values.symptomPresence = 'no'
   values.reviewRequested = false
+  values.nutritionFill = 'skipped'
   const general = buildGeneralPayload(values, 'UTC', new Date('2026-11-14T12:00:00.000Z'))
   const personal = buildPersonalPayload(values, false)
   assert.equal(general.issues.length, 0)

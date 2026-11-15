@@ -51,12 +51,17 @@ export function MeasurementsPage() {
   const values = form.watch()
 
   async function onUnitSystemChange(next: UnitSystem) {
-    const switched = switchDraftField(
-      values.metric === 'temperature' ? 'temperature' : values.metric === 'spo2' ? 'spo2' : values.metric === 'heart_rate' ? 'heart_rate' : 'temperature',
-      values.rawValue,
-      unitSystem,
-      next,
-    )
+    const kind =
+      values.metric === 'temperature'
+        ? 'temperature'
+        : values.metric === 'body_mass'
+          ? 'mass'
+          : values.metric === 'spo2'
+            ? 'spo2'
+            : values.metric === 'heart_rate'
+              ? 'heart_rate'
+              : 'temperature'
+    const switched = switchDraftField(kind, values.rawValue, unitSystem, next)
     if (!switched.ok) {
       setUnitError(t(locale, 'unitsBlocked'))
       return
@@ -181,6 +186,7 @@ export function MeasurementsPage() {
               <option value="heart_rate">{t(locale, 'heartRate')}</option>
               <option value="temperature">{t(locale, 'temperature')}</option>
               <option value="spo2">{t(locale, 'spo2')}</option>
+              <option value="body_mass">{t(locale, 'bodyMass')}</option>
             </select>
           </Field>
           <Field id="rawValue" label={t(locale, 'value')} error={error || undefined} hint={unitHint(locale, values.metric, unitSystem)}>
@@ -243,5 +249,6 @@ function unitHint(locale: 'ru' | 'en', metric: Metric | null, system: UnitSystem
   if (metric === 'heart_rate') return t(locale, 'unitBpm')
   if (metric === 'temperature') return system === 'us' ? t(locale, 'unitF') : t(locale, 'unitC')
   if (metric === 'spo2') return t(locale, 'unitPercent')
+  if (metric === 'body_mass') return system === 'us' ? t(locale, 'unitLb') : t(locale, 'unitKg')
   return ''
 }

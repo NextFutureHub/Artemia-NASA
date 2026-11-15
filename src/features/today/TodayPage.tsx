@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useSession } from '../../app/session.tsx'
+import { PageIntro } from '../../components/FormChrome.tsx'
 import { AppDialog, Button, Card } from '../../components/ui.tsx'
 import { formatZoned, localDateInZone } from '../../domain/clock.ts'
 import { explanationCard, type RuleId } from '../../domain/explanations.ts'
@@ -79,98 +80,115 @@ export function TodayPage() {
   const doctorHref = latestReply ? `/onboard/reports/${latestReply.report_id}` : repliedReport ? `/onboard/reports/${repliedReport.id}` : null
   const feed = buildFeed(checkins, measurements, reports, doctorMessages).slice(0, 5)
   const activeOrders = orders.filter((row) => row.status === 'active' || row.ack_required).slice(0, 3)
+  const dayLabel = session.mission
+    ? (() => {
+        const start = new Date(session.mission.start_at)
+        const ms = openedAt.getTime() - start.getTime()
+        const day = Math.floor(ms / 86_400_000) + 1
+        if (ms < 0) return t(locale, 'beforeStart', { days: Math.ceil(-ms / 86_400_000) })
+        return t(locale, 'missionDay', { day: Math.max(1, day) })
+      })()
+    : ''
+  const connectionText = {
+    checking: t(locale, 'checking'),
+    online: t(locale, 'serverUp'),
+    offline: t(locale, 'serverDown'),
+    auth_required: t(locale, 'authRequired'),
+  }[session.connection]
+  const dailyStatus = draft ? t(locale, 'draft') : completed ? t(locale, 'completed') : t(locale, 'notFilled')
+  const dailyAction = draft ? (
+    <Link className="inline-flex min-h-11 items-center text-accent" to="/onboard/checkin/new">
+      {t(locale, 'resume')}
+    </Link>
+  ) : completed ? (
+    <Link className="inline-flex min-h-11 items-center text-accent" to={`/onboard/checkin/${completed.id}`}>
+      {t(locale, 'openRecord')}
+    </Link>
+  ) : (
+    <Link className="inline-flex min-h-11 items-center text-accent" to="/onboard/checkin/new?mode=daily">
+      {t(locale, 'fill')}
+    </Link>
+  )
 
   return (
-    <div className="flex flex-col gap-4">
-      <header>
-        <h1 className="text-3xl">{t(locale, 'today')}</h1>
-        <p className="numeric text-muted">{formatZoned(openedAt, profile.timezone, locale === 'ru' ? 'ru' : 'en')}</p>
-        <p>{t(locale, 'todaySubtitle')}</p>
-      </header>
-      <Card title={t(locale, 'careCardToday')} action={<Link className="inline-flex min-h-11 items-center" to="/onboard/orders">{t(locale, 'careOpenAll')}</Link>}>
-        {activeOrders.length === 0 ? <p>{t(locale, 'careEmpty')}</p> : null}
-        <ul className="flex flex-col gap-3">
-          {activeOrders.map((order) => (
-            <li key={order.id}>
-              <Link className="block" to="/onboard/orders">
-                <p>{order.title}</p>
-                <p className="text-sm text-muted">
-                  {careKindLabel(locale, order.kind)} · {careStatusLabel(locale, order.status)}
-                  {order.ack_required ? ` · ${t(locale, 'careAckNeeded')}` : ''}
-                </p>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </Card>
-      <Card
-        title={t(locale, 'wellbeing')}
-        action={
-          draft ? (
-            <Link className="inline-flex min-h-11 items-center text-accent" to="/onboard/checkin/new">
-              {t(locale, 'resume')}
-            </Link>
-          ) : completed ? (
-            <Link className="inline-flex min-h-11 items-center text-accent" to={`/onboard/checkin/${completed.id}`}>
-              {t(locale, 'openRecord')}
-            </Link>
-          ) : (
-            <Link className="inline-flex min-h-11 items-center text-accent" to="/onboard/checkin/new?mode=daily">
-              {t(locale, 'fill')}
-            </Link>
-          )
-        }
-      >
-        <p>{draft ? t(locale, 'draft') : completed ? t(locale, 'completed') : t(locale, 'notFilled')}</p>
+    <div className="flex flex-col gap-5">
+      <PageIntro
+        title={t(locale, 'today')}
+        meta={formatZoned(openedAt, profile.timezone, locale === 'ru' ? 'ru' : 'en')}
+        subtitle={t(locale, 'todaySubtitle')}
+      />
+
+      <section className="rounded-xl border border-line bg-surface px-4 py-3">
+        <p className="text-sm text-muted">{t(locale, 'missionContext')}</p>
+        <p className="text-xl">{session.mission?.name ?? '—'}</p>
+        <p className="mt-1 text-sm text-muted">
+          {[dayLabel, session.mission?.mode === 'extended' ? t(locale, 'missionModeExtended') : session.mission ? t(locale, 'missionModeShort') : null]
+            .filter(Boolean)
+            .join(' · ')}
+        </p>
+      </section>
+
+      <Card title={t(locale, 'wellbeing')} action={dailyAction}>
+        <p className="text-lg">{dailyStatus}</p>
         {completed ? (
-          <Link className="mt-3 inline-flex min-h-11 items-center" to="/onboard/checkin/new?mode=change&fresh=1">
-            {t(locale, 'addRecord')}
-          </Link>
+          <div className="mt-3 flex flex-col gap-1">
+            <Link className="inline-flex min-h-11 items-center text-accent" to="/onboard/checkin/new?mode=change&fresh=1">
+              {t(locale, 'addRecord')}
+            </Link>
+            <p className="text-sm text-muted">{t(locale, 'addEventHint')}</p>
+          </div>
         ) : null}
       </Card>
+
+      <Card title={t(locale, 'careCardToday')} action={<Link className="inline-flex min-h-11 items-center" to="/onboard/orders">{t(locale, 'careOpenAll')}</Link>}>
+        {activeOrders.length === 0 ? <p className="text-muted">{t(locale, 'careEmpty')}</p> : null}
+        <ul className="flex flex-col gap-3">
+          {activeOrders.map((order) => {
+            const personal = isPersonalCareTask(order)
+            const overdue = order.due_at ? Date.now() - new Date(order.due_at).getTime() > 0 && order.status === 'active' : false
+            return (
+              <li key={order.id}>
+                <Link className="block" to="/onboard/orders">
+                  <p>{personal ? t(locale, 'personalTask') : order.title}</p>
+                  <p className="text-sm text-muted">
+                    {personal
+                      ? t(locale, 'personalTaskHint')
+                      : `${careKindLabel(locale, order.kind)} · ${careStatusLabel(locale, order.status)}`}
+                    {!personal && order.ack_required ? ` · ${t(locale, 'careAckNeeded')}` : ''}
+                    {!personal && overdue ? ` · ${t(locale, 'careStaleDue')}` : ''}
+                  </p>
+                </Link>
+              </li>
+            )
+          })}
+        </ul>
+      </Card>
+
+      <Card title={t(locale, 'activityNav')} action={<Link className="inline-flex min-h-11 items-center" to="/onboard/activity">{t(locale, 'activityAdd')}</Link>}>
+        <p className="text-sm text-muted">{t(locale, 'activitySubtitle')}</p>
+      </Card>
+
       <Card title={t(locale, 'lastMeasurement')} action={<Link className="inline-flex min-h-11 items-center" to="/onboard/measurements">{t(locale, 'measure')}</Link>}>
         {latest ? (
           <div className="numeric">
             <p>
-              {stale ? `${t(locale, 'ago', { time: elapsed(locale, latest.recorded_at) })} · ` : null}
               {metricLabel(locale, latest.metric)} {formatStoredMeasurement(latest.metric, latest.value, session.unitSystem) || '—'}{' '}
               {displayUnitLabel(locale, metricDisplayUnit(latest.metric, session.unitSystem))}
             </p>
             <p className="mt-1 text-sm text-muted">
-              {sourceLabel(locale, latest.source)} · {qualityLabel(locale, latest.quality)} · {stale ? t(locale, 'measurementStale') : t(locale, 'measurementCurrent')}
+              {t(locale, 'ago', { time: elapsed(locale, latest.recorded_at) })}
+              {' · '}
+              {sourceLabel(locale, latest.source)} · {qualityLabel(locale, latest.quality)}
+              {' · '}
+              {stale ? t(locale, 'measurementStale') : t(locale, 'measurementCurrent')}
             </p>
             <p className="mt-1 text-sm text-muted">{formatZoned(new Date(latest.recorded_at), profile.timezone, locale === 'ru' ? 'ru' : 'en')}</p>
           </div>
         ) : (
-          <p>{t(locale, 'noMeasurement')}</p>
+          <p className="text-muted">{t(locale, 'noMeasurement')}</p>
         )}
       </Card>
-      <Card title={t(locale, 'attention')}>
-        {hints.length === 0 ? <p>{t(locale, 'noHints')}</p> : null}
-        <ul className="flex flex-col gap-3">
-          {hints.map((hint) => (
-            <li key={hint.id}>
-              <p>{t(locale, hint.title)}</p>
-              <p className="text-sm text-muted">{t(locale, hint.body)}</p>
-              <button type="button" className="min-h-11" onClick={() => setWhy(hint.rule)}>
-                {t(locale, 'why')}
-              </button>
-              <button
-                type="button"
-                className="min-h-11 px-3"
-                onClick={() => {
-                  if (!completed) return
-                  void hideObservation(db, { ownerId: profile.owner_id, environmentId }, hint.rule, completed.id).then(() => {
-                    setHidden(new Set(hidden).add(`${hint.rule}:${completed.id}`))
-                  })
-                }}
-              >
-                {t(locale, 'hideHome')}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </Card>
+
       <Card
         title={t(locale, 'doctorCard')}
         action={
@@ -178,7 +196,11 @@ export function TodayPage() {
             <Link className="inline-flex min-h-11 items-center text-accent" to={doctorHref}>
               {t(locale, 'openReply')}
             </Link>
-          ) : null
+          ) : (
+            <button type="button" className="inline-flex min-h-11 items-center text-accent" onClick={() => setContact(true)}>
+              {t(locale, 'contact')}
+            </button>
+          )
         }
       >
         {latestReply ? (
@@ -197,12 +219,49 @@ export function TodayPage() {
             </p>
           </div>
         ) : (
-          <p>{t(locale, 'noReply')}</p>
+          <p className="text-muted">{t(locale, 'noReply')}</p>
         )}
-        <p className="mt-2">{t(locale, 'pendingOps', { count: session.pending })}</p>
       </Card>
+
+      <Card title={t(locale, 'syncCard')} action={<Link className="inline-flex min-h-11 items-center" to="/onboard/sync">{t(locale, 'syncOpen')}</Link>}>
+        <p>{connectionText}</p>
+        <p className="mt-1 text-sm text-muted">
+          {session.pending > 0 ? t(locale, 'pendingOps', { count: session.pending }) : t(locale, 'queueEmptyShort')}
+        </p>
+      </Card>
+
+      {hints.length > 0 ? (
+        <Card title={t(locale, 'attention')}>
+          <ul className="flex flex-col gap-3">
+            {hints.map((hint) => (
+              <li key={hint.id} className="border-b border-line pb-3 last:border-b-0 last:pb-0">
+                <p>{t(locale, hint.title)}</p>
+                <p className="text-sm text-muted">{t(locale, hint.body)}</p>
+                <div className="mt-1 flex flex-wrap gap-2">
+                  <button type="button" className="min-h-11 text-sm text-accent" onClick={() => setWhy(hint.rule)}>
+                    {t(locale, 'why')}
+                  </button>
+                  <button
+                    type="button"
+                    className="min-h-11 px-1 text-sm text-muted"
+                    onClick={() => {
+                      if (!completed) return
+                      void hideObservation(db, { ownerId: profile.owner_id, environmentId }, hint.rule, completed.id).then(() => {
+                        setHidden(new Set(hidden).add(`${hint.rule}:${completed.id}`))
+                      })
+                    }}
+                  >
+                    {t(locale, 'hideHome')}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
+
       <Card title={t(locale, 'feed')}>
-        {feed.length === 0 ? <p>{t(locale, 'noEvents')}</p> : null}
+        {feed.length === 0 ? <p className="text-muted">{t(locale, 'noEvents')}</p> : null}
         <ul>
           {feed.map((event) => (
             <li key={event.id} className="min-h-11">
@@ -216,7 +275,10 @@ export function TodayPage() {
           ))}
         </ul>
       </Card>
-      <Button onClick={() => setContact(true)}>{t(locale, 'contact')}</Button>
+
+      <Button variant="secondary" onClick={() => setContact(true)}>
+        {t(locale, 'contact')}
+      </Button>
       <AppDialog open={contact} onOpenChange={setContact} title={t(locale, 'contact')} description={t(locale, 'noEmergencyPromise')}>
         <Button
           variant="secondary"
@@ -258,6 +320,10 @@ export function TodayPage() {
       </AppDialog>
     </div>
   )
+}
+
+function isPersonalCareTask(order: LocalCareOrder): boolean {
+  return order.kind === 'symptom_monitor'
 }
 
 function buildFeed(

@@ -2,6 +2,7 @@ import Dexie, { type Table } from 'dexie'
 import type {
   AssignmentCache,
   DraftRecord,
+  LocalActivity,
   LocalAudit,
   LocalCareOrder,
   LocalCheckin,
@@ -43,6 +44,7 @@ export class ArtemiaDb extends Dexie {
   syncCursors!: Table<OwnedRow & { id: string; scope: string }, string>
   localAudit!: Table<LocalAudit, string>
   localCareOrders!: Table<LocalCareOrder, string>
+  localActivities!: Table<LocalActivity, string>
   demoSettings!: Table<OwnedRow & { id: string }, string>
   observationHides!: Table<OwnedRow & { id: string; rule_id: string; entity_id: string }, string>
 
@@ -73,6 +75,9 @@ export class ArtemiaDb extends Dexie {
     })
     this.version(2).stores({
       localCareOrders: 'id, [owner_id+environment_id]',
+    })
+    this.version(3).stores({
+      localActivities: 'id, [owner_id+environment_id], operation_id',
     })
   }
 }

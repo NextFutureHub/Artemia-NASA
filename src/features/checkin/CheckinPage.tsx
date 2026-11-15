@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useSession } from '../../app/session.tsx'
 import { ChoiceButtons } from '../../components/Choices.tsx'
+import { OptionalGate, ReviewLine, StepRail } from '../../components/FormChrome.tsx'
 import { AppDialog, Banner, Button, Field } from '../../components/ui.tsx'
 import { dateToZonedInput, formatZoned, localDateInZone, zonedInputToDate } from '../../domain/clock.ts'
 import {
@@ -46,6 +47,8 @@ import {
 } from '../../i18n/copy.ts'
 import type { DraftRecord, LocalDelivery, LocalMeasurement } from '../../data/local/types.ts'
 import { PersonalStep } from './PersonalStep.tsx'
+import { SleepIntervalsPanel } from './SleepIntervalsPanel.tsx'
+import { sumSleptIntervalHours, type SleepInterval } from '../../domain/sleepIntervals.ts'
 
 export function CheckinPage() {
   const session = useSession()
@@ -69,6 +72,7 @@ export function CheckinPage() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [sectionEnabled, setSectionEnabled] = useState(profile?.reproductive_enabled ?? false)
   const [sectionSharing, setSectionSharing] = useState<SharingMode>(profile?.sensitive_sharing ?? 'device_only')
+  const [measureChoice, setMeasureChoice] = useState<'fill' | 'skip' | null>(null)
   const stepRef = useRef(step)
   stepRef.current = step
   const draftRef = useRef(draft)
@@ -128,20 +132,21 @@ export function CheckinPage() {
   }, [draft?.id, form])
 
   function openDraft(next: DraftRecord) {
-    const values = {
+    const values = applyChangePathDefaults({
       ...emptyCheckinDraft(next.values.type, next.values.recordedAtLocal, next.values.personalSharing ?? 'device_only'),
       ...next.values,
-    }
-    const visible = checkinSteps(profile?.reproductive_enabled ?? false)
+    })
+    const visible = checkinSteps(profile?.reproductive_enabled ?? false, values.type ?? 'daily')
     setDraft({ ...next, values })
     setStep(visible.includes(next.step) ? next.step : 'general')
     form.reset(values)
     setSavedAt(next.updated_at)
+    setMeasureChoice(values.measurementIds.length > 0 ? 'fill' : null)
   }
 
   if (!profile) return null
   const activeProfile = profile
-  const steps = checkinSteps(activeProfile.reproductive_enabled)
+  const steps = checkinSteps(activeProfile.reproductive_enabled, values.type ?? 'daily')
   const timeZone = profile.timezone
   const errorFor = (path: string) => {
     const issue = issues.find((item) => item.path === path)
@@ -241,27 +246,34 @@ export function CheckinPage() {
 
   const recorded = zonedInputToDate(values.recordedAtLocal, timeZone)
   const later = recorded ? isFilledLater(recorded, new Date()) : false
+  const isChange = values.type === 'change'
+  const stepItems = steps.map((item) => ({ id: item, label: t(locale, stepKey(item)) }))
 
   return (
     <form
       className="flex flex-col gap-4 pb-24"
       onSubmit={(event) => {
         event.preventDefault()
+        if (step === 'measurements' && measureChoice !== 'fill') {
+          setMeasureChoice('skip')
+          form.setValue('measurementIds', [])
+        }
         if (step === 'review') void onSave()
         else go(steps[steps.indexOf(step) + 1] ?? step)
       }}
     >
-      <div className="flex items-start justify-between gap-3">
-        <ol className="flex flex-wrap gap-2 text-sm">
-          {steps.map((item, index) => (
-            <li key={item} className={item === step ? 'text-accent' : 'text-muted'}>
-              {index + 1}. {t(locale, stepKey(item))}
-            </li>
-          ))}
-        </ol>
-        <p className="text-sm text-muted">{t(locale, 'localHint')}</p>
+      <StepRail steps={stepItems} current={step} locale={locale} />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-muted">
+          {isChange ? t(locale, 'change') : t(locale, 'daily')} · {t(locale, 'localHint')}
+        </p>
+        {savedAt ? (
+          <p className="numeric text-sm text-muted">
+            {t(locale, 'draftSaved', { time: formatZoned(new Date(savedAt), timeZone, locale === 'ru' ? 'ru' : 'en') })}
+          </p>
+        ) : null}
       </div>
-      {savedAt ? <p className="numeric text-sm text-muted">{t(locale, 'draftSaved', { time: formatZoned(new Date(savedAt), timeZone, locale === 'ru' ? 'ru' : 'en') })}</p> : null}
+      {isChange ? <Banner tone="neutral">{t(locale, 'changePathBanner')}</Banner> : null}
       {failure ? <Banner tone="danger">{failure}</Banner> : null}
       {issues.length > 0 ? (
         <Banner tone="attention">
@@ -279,17 +291,11 @@ export function CheckinPage() {
           <Field id="recordedAtLocal" label={t(locale, 'recordedAt')} hint={timeZone} error={errorFor('recordedAtLocal')}>
             <input id="recordedAtLocal" type="datetime-local" className="min-h-11 rounded-xl border border-line bg-canvas px-3" {...form.register('recordedAtLocal')} />
           </Field>
-          {later ? <p>{t(locale, 'filledLater')}</p> : null}
+          {later ? <p className="text-sm text-muted">{t(locale, 'filledLater')}</p> : null}
           <p className="text-sm text-muted">{t(locale, 'notATest')}</p>
           <ChoiceButtons locale={locale} labelText={t(locale, 'overall')} value={values.overallState} onChange={(value) => form.setValue('overallState', value)} options={options(overallLabels)} />
-          <Field id="sleepHours" label={t(locale, 'sleep')} error={errorFor('sleepHours')}>
-            <input id="sleepHours" inputMode="decimal" className="min-h-11 rounded-xl border border-line bg-canvas px-3" {...form.register('sleepHours')} />
-          </Field>
-          <label className="flex min-h-11 items-center gap-2">
-            <input type="checkbox" checked={values.sleepSkip} onChange={(event) => form.setValue('sleepSkip', event.target.checked)} />
-            {t(locale, 'sleepUnknown')}
-          </label>
-          <Score labelText={t(locale, 'sleepQuality')} value={values.sleepQuality} max={5} min={1} onChange={(value) => form.setValue('sleepQuality', value)} skip={values.sleepQualitySkip} onSkip={(value) => form.setValue('sleepQualitySkip', value)} locale={locale} />
+          {isChange ? <p className="rounded-xl border border-dashed border-line px-4 py-3 text-sm text-muted">{t(locale, 'sleepSkippedForChange')}</p> : null}
+          <p className="text-sm text-muted">{t(locale, 'valueZeroHint')}</p>
           <Score labelText={t(locale, 'fatigue')} value={values.fatigue} max={10} min={0} onChange={(value) => form.setValue('fatigue', value)} skip={values.fatigueSkip} onSkip={(value) => form.setValue('fatigueSkip', value)} locale={locale} />
           <Score labelText={t(locale, 'stress')} value={values.stress} max={10} min={0} onChange={(value) => form.setValue('stress', value)} skip={values.stressSkip} onSkip={(value) => form.setValue('stressSkip', value)} locale={locale} />
           <ChoiceButtons locale={locale} labelText={t(locale, 'emotional')} value={values.emotional} onChange={(value) => form.setValue('emotional', value)} options={options(emotionalLabels)} />
@@ -303,6 +309,127 @@ export function CheckinPage() {
             <textarea id="comment" maxLength={1000} className="min-h-24 rounded-xl border border-line bg-canvas px-3 py-2" {...form.register('comment')} />
           </Field>
         </section>
+      ) : null}
+
+      {step === 'sleep' ? (
+        <section className="flex flex-col gap-4" aria-labelledby="sleep-step-heading">
+          <h2 id="sleep-step-heading" className="sr-only">{t(locale, 'sleepStep')}</h2>
+          <p className="text-sm text-muted">{t(locale, 'sleepPeriodHint')}</p>
+          <p className="text-sm text-muted">{t(locale, 'sleepZeroHint')}</p>
+          <Field id="sleepHours" label={t(locale, 'sleep')} error={errorFor('sleepHours')}>
+            <input id="sleepHours" inputMode="decimal" disabled={values.sleepSkip} className="min-h-11 rounded-xl border border-line bg-canvas px-3 disabled:opacity-50" {...form.register('sleepHours')} />
+          </Field>
+          <label className="flex min-h-11 items-center gap-2">
+            <input type="checkbox" checked={values.sleepSkip} onChange={(event) => { form.setValue('sleepSkip', event.target.checked); if (event.target.checked) { form.setValue('sleepHours', ''); form.setValue('sleepDurationSource', null) } }} />
+            {t(locale, 'sleepUnknown')}
+          </label>
+          {!values.sleepSkip && values.sleepHours.trim() === '0' ? (
+            <p className="text-sm text-muted">{t(locale, 'answerZero')}</p>
+          ) : null}
+          <Score labelText={t(locale, 'sleepQuality')} value={values.sleepQuality} max={5} min={1} onChange={(value) => form.setValue('sleepQuality', value)} skip={values.sleepQualitySkip} onSkip={(value) => form.setValue('sleepQualitySkip', value)} locale={locale} />
+          <ChoiceButtons locale={locale} labelText={t(locale, 'sleepiness')} value={values.sleepinessSkip ? 'skip' : values.sleepiness} onChange={(value) => { if (value === 'skip') { form.setValue('sleepinessSkip', true); form.setValue('sleepiness', null) } else { form.setValue('sleepinessSkip', false); form.setValue('sleepiness', value) } }} options={[{ value: 'none', label: { ru: 'Не было', en: 'None' } }, { value: 'mild', label: { ru: 'Небольшая', en: 'Mild' } }, { value: 'marked', label: { ru: 'Выраженная', en: 'Marked' } }, { value: 'skip', label: { ru: 'Не оценивать', en: 'Do not rate' } }]} />
+          <ChoiceButtons locale={locale} labelText={t(locale, 'awakenings')} value={values.awakeningsSkip ? 'skip' : values.awakenings} onChange={(value) => { if (value === 'skip') { form.setValue('awakeningsSkip', true); form.setValue('awakenings', null) } else { form.setValue('awakeningsSkip', false); form.setValue('awakenings', value) } }} options={[{ value: 'none', label: { ru: 'Не было', en: 'None' } }, { value: 'occurred', label: { ru: 'Были', en: 'Occurred' } }, { value: 'unknown', label: { ru: 'Не помню', en: "Don't remember" } }, { value: 'skip', label: { ru: 'Не оценивать', en: 'Do not rate' } }]} />
+          <ChoiceButtons locale={locale} labelText={t(locale, 'sleepPlanDeviation')} value={values.sleepPlanDeviationSkip ? 'skip' : values.sleepPlanDeviation} onChange={(value) => { if (value === 'skip') { form.setValue('sleepPlanDeviationSkip', true); form.setValue('sleepPlanDeviation', null) } else { form.setValue('sleepPlanDeviationSkip', false); form.setValue('sleepPlanDeviation', value) } }} options={[{ value: 'no', label: { ru: 'Нет', en: 'No' } }, { value: 'yes', label: { ru: 'Да', en: 'Yes' } }, { value: 'no_plan', label: { ru: 'План не задан', en: 'No plan set' } }, { value: 'unknown', label: { ru: 'Не знаю', en: "I don't know" } }, { value: 'skip', label: { ru: 'Не оценивать', en: 'Do not rate' } }]} />
+          <fieldset>
+            <legend className="mb-2 text-sm">{t(locale, 'sleepInterfering')}</legend>
+            <label className="mb-2 flex min-h-11 items-center gap-2">
+              <input type="checkbox" checked={values.sleepInterferingSkip} onChange={(event) => { form.setValue('sleepInterferingSkip', event.target.checked); if (event.target.checked) form.setValue('sleepInterfering', []) }} />
+              {t(locale, 'skipRate')}
+            </label>
+            {!values.sleepInterferingSkip ? (
+              <div className="flex flex-wrap gap-2">
+                {([['noise', { ru: 'Шум', en: 'Noise' }], ['light', { ru: 'Свет', en: 'Light' }], ['tasks', { ru: 'Задачи', en: 'Tasks' }], ['discomfort', { ru: 'Дискомфорт', en: 'Discomfort' }], ['other', { ru: 'Другое', en: 'Other' }]] as const).map(([code, labels]) => {
+                  const selected = values.sleepInterfering.includes(code)
+                  return (
+                    <button key={code} type="button" aria-pressed={selected} className={`min-h-11 rounded-xl border px-3 ${selected ? 'border-accent text-accent' : 'border-line'}`} onClick={() => form.setValue('sleepInterfering', selected ? values.sleepInterfering.filter((item) => item !== code) : [...values.sleepInterfering, code])}>
+                      {label(locale, labels)}
+                    </button>
+                  )
+                })}
+              </div>
+            ) : null}
+            {!values.sleepInterferingSkip && values.sleepInterfering.includes('other') ? (
+              <Field id="sleepInterferingOther" label={t(locale, 'other')} error={errorFor('sleepInterferingOther')}>
+                <input id="sleepInterferingOther" maxLength={120} className="mt-2 min-h-11 rounded-xl border border-line bg-canvas px-3" {...form.register('sleepInterferingOther')} />
+              </Field>
+            ) : null}
+          </fieldset>
+          <ChoiceButtons locale={locale} labelText={t(locale, 'sleepDiscuss')} value={values.sleepDiscussSkip ? 'skip' : values.sleepDiscuss === null ? null : values.sleepDiscuss ? 'yes' : 'no'} onChange={(value) => { if (value === 'skip') { form.setValue('sleepDiscussSkip', true); form.setValue('sleepDiscuss', null) } else { form.setValue('sleepDiscussSkip', false); form.setValue('sleepDiscuss', value === 'yes') } }} options={[{ value: 'yes', label: { ru: 'Да', en: 'Yes' } }, { value: 'no', label: { ru: 'Нет', en: 'No' } }, { value: 'skip', label: { ru: 'Не оценивать', en: 'Do not rate' } }]} />
+          <Field id="sleepComment" label={t(locale, 'sleepComment')} hint={`${values.sleepComment.length}/500`}>
+            <textarea id="sleepComment" maxLength={500} className="min-h-20 rounded-xl border border-line bg-canvas px-3 py-2" {...form.register('sleepComment')} />
+          </Field>
+          <SleepIntervalsPanel
+            locale={locale}
+            timeZone={timeZone}
+            overallHoursRaw={values.sleepHours}
+            overallUnknown={values.sleepSkip}
+            intervals={values.sleepIntervals}
+            durationSource={values.sleepDurationSource}
+            onIntervalsChange={(next) => form.setValue('sleepIntervals', next)}
+            onDurationSourceChange={(next) => form.setValue('sleepDurationSource', next)}
+          />
+        </section>
+      ) : null}
+
+      {step === 'nutrition' ? (
+        <OptionalGate locale={locale} title={t(locale, 'nutritionStep')} lead={t(locale, 'nutritionHint')} choice={values.nutritionFill === 'filled' ? 'fill' : values.nutritionFill === 'skipped' ? 'skip' : null} onFill={() => form.setValue('nutritionFill', 'filled')} onSkip={() => form.setValue('nutritionFill', 'skipped')}>
+          {values.nutritionFill === 'filled' ? (
+            <div className="flex flex-col gap-4">
+              <div className="rounded-xl border border-dashed border-line p-3">
+                <p className="text-sm text-muted">{t(locale, 'nutritionPeriodTitle')}</p>
+                <p className="mt-1 text-sm text-muted">{t(locale, 'nutritionPeriodLead')}</p>
+                <div className="mt-3 flex flex-col gap-3">
+                  <Field id="nutritionPeriodStartLocal" label={t(locale, 'nutritionPeriodStart')} error={errorFor('nutritionPeriodStartLocal')} hint={t(locale, 'nutritionPeriodDefault')}>
+                    <input id="nutritionPeriodStartLocal" type="datetime-local" className="min-h-11 rounded-xl border border-line bg-canvas px-3" {...form.register('nutritionPeriodStartLocal')} />
+                  </Field>
+                  <Field id="nutritionPeriodEndLocal" label={t(locale, 'nutritionPeriodEnd')} error={errorFor('nutritionPeriodEndLocal')}>
+                    <input id="nutritionPeriodEndLocal" type="datetime-local" className="min-h-11 rounded-xl border border-line bg-canvas px-3" {...form.register('nutritionPeriodEndLocal')} />
+                  </Field>
+                </div>
+                {(values.nutritionPeriodStartLocal.trim() !== '' || values.nutritionPeriodEndLocal.trim() !== '') ? (
+                  <p className="mt-2 text-sm text-muted">{t(locale, 'nutritionHistoryOverlapHint')}</p>
+                ) : null}
+              </div>
+              <ChoiceButtons locale={locale} labelText={t(locale, 'appetite')} value={values.appetiteSkip ? 'skip' : values.appetite} onChange={(value) => { if (value === 'skip') { form.setValue('appetiteSkip', true); form.setValue('appetite', null) } else { form.setValue('appetiteSkip', false); form.setValue('appetite', value) } }} options={[{ value: 'usual', label: { ru: 'Обычный', en: 'Usual' } }, { value: 'decreased', label: { ru: 'Снижен', en: 'Decreased' } }, { value: 'increased', label: { ru: 'Повышен', en: 'Increased' } }, { value: 'skip', label: { ru: 'Не оценивать', en: 'Do not rate' } }]} />
+              <ChoiceButtons locale={locale} labelText={t(locale, 'mealPlan')} value={values.mealPlanSkip ? 'skip' : values.mealPlan} onChange={(value) => { if (value === 'skip') { form.setValue('mealPlanSkip', true); form.setValue('mealPlan', null) } else { form.setValue('mealPlanSkip', false); form.setValue('mealPlan', value) } }} options={[{ value: 'full', label: { ru: 'Полностью', en: 'Fully' } }, { value: 'partial', label: { ru: 'Частично', en: 'Partially' } }, { value: 'not_done', label: { ru: 'Не выполнен', en: 'Not done' } }, { value: 'no_plan', label: { ru: 'План не задан', en: 'No plan set' } }, { value: 'unknown', label: { ru: 'Не знаю', en: "I don't know" } }, { value: 'skip', label: { ru: 'Не оценивать', en: 'Do not rate' } }]} />
+              {!values.mealPlanSkip && (values.mealPlan === 'partial' || values.mealPlan === 'not_done') ? (
+                <>
+                  <Field id="missedMeals" label={t(locale, 'missedMeals')} error={errorFor('missedMeals')}>
+                    <input id="missedMeals" inputMode="numeric" disabled={values.missedMealsUnknown} className="min-h-11 rounded-xl border border-line bg-canvas px-3 disabled:opacity-50" {...form.register('missedMeals')} />
+                  </Field>
+                  <label className="flex min-h-11 items-center gap-2">
+                    <input type="checkbox" checked={values.missedMealsUnknown} onChange={(event) => form.setValue('missedMealsUnknown', event.target.checked)} />
+                    {t(locale, 'sleepUnknown')}
+                  </label>
+                  <ChoiceButtons locale={locale} labelText={t(locale, 'nutritionDeviation')} value={values.deviationReasonSkip ? 'skip' : values.deviationReason} onChange={(value) => { if (value === 'skip') { form.setValue('deviationReasonSkip', true); form.setValue('deviationReason', null) } else { form.setValue('deviationReasonSkip', false); form.setValue('deviationReason', value) } }} options={[{ value: 'no_appetite', label: { ru: 'Нет аппетита', en: 'No appetite' } }, { value: 'nausea', label: { ru: 'Тошнота', en: 'Nausea' } }, { value: 'no_time', label: { ru: 'Нет времени', en: 'No time' } }, { value: 'other', label: { ru: 'Другое', en: 'Other' } }, { value: 'declined', label: { ru: 'Не указывать', en: 'Prefer not to say' } }, { value: 'skip', label: { ru: 'Не оценивать', en: 'Do not rate' } }]} />
+                </>
+              ) : null}
+              <Field id="fluidRaw" label={t(locale, 'fluidMl')} error={errorFor('fluidRaw')} hint={t(locale, 'fluidHint')}>
+                <input id="fluidRaw" inputMode="numeric" disabled={values.fluidSkip} className="min-h-11 rounded-xl border border-line bg-canvas px-3 disabled:opacity-50" {...form.register('fluidRaw')} />
+              </Field>
+              <label className="flex min-h-11 items-center gap-2">
+                <input type="checkbox" checked={values.fluidSkip} onChange={(event) => { form.setValue('fluidSkip', event.target.checked); if (event.target.checked) { form.setValue('fluidRaw', ''); form.setValue('fluidCompleteness', null) } }} />
+                {t(locale, 'fluidNotTracked')}
+              </label>
+              {!values.fluidSkip && values.fluidRaw.trim() === '0' ? (
+                <p className="text-sm text-muted">{t(locale, 'fluidZeroAnswer')}</p>
+              ) : null}
+              {!values.fluidSkip ? (
+                <>
+                  <ChoiceButtons locale={locale} labelText={t(locale, 'fluidCompleteness')} value={values.fluidCompleteness} onChange={(value) => form.setValue('fluidCompleteness', value)} options={[{ value: 'full', label: { ru: 'Полный', en: 'Complete' } }, { value: 'partial', label: { ru: 'Частичный', en: 'Partial' } }, { value: 'unknown', label: { ru: 'Не знаю', en: "I don't know" } }]} />
+                  {values.fluidCompleteness === null && values.fluidRaw.trim() !== '' ? (
+                    <p className="text-sm text-muted">{t(locale, 'fluidCompletenessRequired')}</p>
+                  ) : null}
+                </>
+              ) : (
+                <p className="text-sm text-muted">{t(locale, 'fluidNotTracked')}</p>
+              )}
+              <Field id="nutritionComment" label={t(locale, 'comment')} hint={`${values.nutritionComment.length}/500`}>
+                <textarea id="nutritionComment" maxLength={500} className="min-h-20 rounded-xl border border-line bg-canvas px-3 py-2" {...form.register('nutritionComment')} />
+              </Field>
+            </div>
+          ) : null}
+        </OptionalGate>
       ) : null}
 
       {step === 'symptoms' ? (
@@ -417,34 +544,45 @@ export function CheckinPage() {
       ) : null}
 
       {step === 'measurements' ? (
-        <section className="flex flex-col gap-3">
-          <p>{t(locale, 'measurementsOptional')}</p>
+        <OptionalGate
+          locale={locale}
+          title={t(locale, 'measurementsStep')}
+          lead={t(locale, 'measurementsOptional')}
+          choice={measureChoice}
+          onFill={() => setMeasureChoice('fill')}
+          onSkip={() => {
+            setMeasureChoice('skip')
+            form.setValue('measurementIds', [])
+          }}
+        >
           {measurements.length === 0 ? <p className="text-muted">{t(locale, 'noMeasurement')}</p> : null}
-          {measurements.map((measurement) => (
-            <label key={measurement.id} className="flex min-h-11 items-center gap-2 rounded-xl border border-line px-3">
-              <input
-                type="checkbox"
-                checked={values.measurementIds.includes(measurement.id)}
-                onChange={(event) => {
-                  const next = event.target.checked
-                    ? [...values.measurementIds, measurement.id]
-                    : values.measurementIds.filter((id) => id !== measurement.id)
-                  form.setValue('measurementIds', next)
-                }}
-              />
-              <span>
-                {t(locale, 'attach')} · {measurement.metric} · <span className="numeric">{measurement.value ?? '—'}</span> · {measurement.source} · {measurement.quality}
-              </span>
-            </label>
-          ))}
-          <Link className="inline-flex min-h-11 items-center" to="/onboard/measurements">
+          <div className="flex flex-col gap-2">
+            {measurements.map((measurement) => (
+              <label key={measurement.id} className="flex min-h-11 items-center gap-2 rounded-xl border border-line px-3">
+                <input
+                  type="checkbox"
+                  checked={values.measurementIds.includes(measurement.id)}
+                  onChange={(event) => {
+                    const next = event.target.checked
+                      ? [...values.measurementIds, measurement.id]
+                      : values.measurementIds.filter((id) => id !== measurement.id)
+                    form.setValue('measurementIds', next)
+                  }}
+                />
+                <span>
+                  {t(locale, 'attach')} · {measurement.metric} · <span className="numeric">{measurement.value ?? '—'}</span> · {measurement.source} · {measurement.quality}
+                </span>
+              </label>
+            ))}
+          </div>
+          <Link className="inline-flex min-h-11 items-center text-accent" to="/onboard/measurements">
             {t(locale, 'newMeasurement')}
           </Link>
-        </section>
+        </OptionalGate>
       ) : null}
 
       {step === 'review' ? (
-        <section className="flex flex-col gap-3">
+        <section className="flex flex-col gap-4">
           {draft?.intent === 'revise' ? (
             <Field id="reason" label={t(locale, 'reason')}>
               <input
@@ -456,21 +594,54 @@ export function CheckinPage() {
               />
             </Field>
           ) : null}
-          <p>{t(locale, 'overall')}: {values.overallState ? label(locale, overallLabels[values.overallState]) : '—'}</p>
-          <p>{t(locale, 'generalDelivery')}: {share ? t(locale, 'assignedDoctor') : t(locale, 'deviceOnly')}</p>
-          <label className="flex min-h-11 items-center gap-2">
-            <input type="checkbox" checked={share} onChange={(event) => setShare(event.target.checked)} />
-            {t(locale, 'exchange')}
-          </label>
-          <p>{t(locale, 'personalDelivery')}: {personalLine(locale, profile.reproductive_enabled, values.personalFill, values.personalSharing, share)}</p>
-          {profile.reproductive_enabled && values.personalSharing === 'assigned_doctor' && !share ? (
-            <p className="text-sm text-attention">{t(locale, 'personalNeedsGeneral')}</p>
-          ) : null}
-          <p className="text-sm text-muted">{t(locale, 'exchangeHint')}</p>
-          <p>
-            {t(locale, 'linkState')}: {session.connection === 'online' ? t(locale, 'linkUp') : t(locale, 'linkDown')}
-          </p>
-          <button type="button" className="min-h-11 text-left" onClick={() => setStep('general')}>
+          <div>
+            <h2 className="text-xl">{t(locale, 'reviewSections')}</h2>
+            <div className="mt-2">
+              <ReviewLine
+                label={t(locale, 'recordType')}
+                value={isChange ? t(locale, 'change') : t(locale, 'daily')}
+              />
+              <ReviewLine
+                label={t(locale, 'overall')}
+                value={values.overallState ? label(locale, overallLabels[values.overallState]) : t(locale, 'answerNone')}
+              />
+              <ReviewLine label={t(locale, 'reviewSleep')} value={sleepReviewLabel(locale, values, isChange, timeZone)} />
+              <ReviewLine label={t(locale, 'reviewNutrition')} value={nutritionReviewLabel(locale, values, isChange)} />
+              <Link className="inline-flex min-h-11 items-center text-accent" to="/onboard/activity">
+                {t(locale, 'activityAdd')}
+              </Link>
+              <ReviewLine label={t(locale, 'reviewFatigue')} value={scoreReviewLabel(locale, values.fatigue, values.fatigueSkip)} />
+              <ReviewLine label={t(locale, 'reviewStress')} value={scoreReviewLabel(locale, values.stress, values.stressSkip)} />
+              <ReviewLine label={t(locale, 'reviewSymptoms')} value={symptomReviewLabel(locale, values)} />
+              <ReviewLine
+                label={t(locale, 'reviewPersonal')}
+                value={personalLine(locale, profile.reproductive_enabled, values.personalFill, values.personalSharing, share)}
+              />
+              <ReviewLine
+                label={t(locale, 'reviewMeasurements')}
+                value={
+                  values.measurementIds.length > 0
+                    ? t(locale, 'measurementsCount', { count: values.measurementIds.length })
+                    : t(locale, 'measurementsNone')
+                }
+              />
+            </div>
+          </div>
+          <div className="flex flex-col gap-2 rounded-xl border border-line p-4">
+            <p>{t(locale, 'generalDelivery')}: {share ? t(locale, 'assignedDoctor') : t(locale, 'deviceOnly')}</p>
+            <label className="flex min-h-11 items-center gap-2">
+              <input type="checkbox" checked={share} onChange={(event) => setShare(event.target.checked)} />
+              {t(locale, 'exchange')}
+            </label>
+            {profile.reproductive_enabled && values.personalSharing === 'assigned_doctor' && !share ? (
+              <p className="text-sm text-attention">{t(locale, 'personalNeedsGeneral')}</p>
+            ) : null}
+            <p className="text-sm text-muted">{t(locale, 'exchangeHint')}</p>
+            <p className="text-sm">
+              {t(locale, 'linkState')}: {session.connection === 'online' ? t(locale, 'linkUp') : t(locale, 'linkDown')}
+            </p>
+          </div>
+          <button type="button" className="min-h-11 text-left text-accent" onClick={() => setStep('general')}>
             {t(locale, 'edit')}
           </button>
         </section>
@@ -577,7 +748,11 @@ export function CheckinPage() {
   )
 }
 
-function stepKey(step: CheckinStep): 'generalStep' | 'symptomsStep' | 'personalStep' | 'measurementsStep' | 'reviewStep' {
+function stepKey(
+  step: CheckinStep,
+): 'generalStep' | 'sleepStep' | 'nutritionStep' | 'symptomsStep' | 'personalStep' | 'measurementsStep' | 'reviewStep' {
+  if (step === 'sleep') return 'sleepStep'
+  if (step === 'nutrition') return 'nutritionStep'
   if (step === 'symptoms') return 'symptomsStep'
   if (step === 'personal') return 'personalStep'
   if (step === 'measurements') return 'measurementsStep'
@@ -642,16 +817,124 @@ function Score({
           </button>
         ))}
         <button type="button" aria-pressed={skip} className={`min-h-11 rounded-xl border px-3 ${skip ? 'border-accent text-accent' : 'border-line'}`} onClick={() => onSkip(true)}>
-          {t(locale, 'skipRate')}
+          {t(locale, 'answerDeclined')}
         </button>
       </div>
-      {min === 0 ? (
-        <p className="mt-1 text-sm text-muted">
-          0 {t(locale, 'scaleNone')} · {max} {t(locale, 'scaleMax')}
-        </p>
-      ) : null}
+      <p className="mt-1 text-sm text-muted">
+        {min === 0 ? `${t(locale, 'scaleNone')} · ${max} ${t(locale, 'scaleMax')} · ` : null}
+        {skip
+          ? t(locale, 'answerDeclined')
+          : value === 0
+            ? t(locale, 'answerZero')
+            : value === null
+              ? t(locale, 'answerNone')
+              : null}
+      </p>
     </fieldset>
   )
+}
+
+function applyChangePathDefaults(values: CheckinDraftValues): CheckinDraftValues {
+  if (values.type !== 'change') return values
+  return {
+    ...values,
+    sleepSkip: true,
+    sleepHours: '',
+    sleepQuality: null,
+    sleepQualitySkip: true,
+    sleepinessSkip: true,
+    awakeningsSkip: true,
+    sleepPlanDeviationSkip: true,
+    sleepInterferingSkip: true,
+    sleepInterfering: [],
+    sleepDiscussSkip: true,
+    sleepComment: '',
+    sleepIntervals: [],
+    sleepDurationSource: null,
+    nutritionFill: 'not_applicable',
+  }
+}
+
+function sleepReviewLabel(
+  locale: 'ru' | 'en',
+  values: CheckinDraftValues,
+  isChange: boolean,
+  timeZone: string,
+): string {
+  // Change path omits sleep entirely (not_applicable) — distinct from daily "I don't know".
+  if (isChange) return t(locale, 'notApplicable')
+  if (values.sleepSkip && values.sleepIntervals.length === 0) return t(locale, 'answerUnknown')
+  const quality = values.sleepQualitySkip
+    ? t(locale, 'answerDeclined')
+    : values.sleepQuality === null
+      ? t(locale, 'answerNone')
+      : String(values.sleepQuality)
+  const hoursLabel =
+    values.sleepSkip || values.sleepHours.trim() === ''
+      ? null
+      : values.sleepHours.trim() === '0'
+        ? t(locale, 'answerZero')
+        : `${values.sleepHours} ${t(locale, 'hoursUnit')}`
+  let base = hoursLabel
+    ? `${hoursLabel} · ${t(locale, 'sleepQuality')}: ${quality}`
+    : `${t(locale, 'answerUnknown')} · ${t(locale, 'sleepQuality')}: ${quality}`
+  if (values.sleepIntervals.length > 0) {
+    const domainIntervals: SleepInterval[] = values.sleepIntervals.flatMap((item) => {
+      const start = zonedInputToDate(item.startLocal, timeZone)
+      const end = zonedInputToDate(item.endLocal, timeZone)
+      if (!start || !end) return []
+      return [{ start_at: start.toISOString(), end_at: end.toISOString(), kind: item.kind, quality: item.quality }]
+    })
+    const total = sumSleptIntervalHours(domainIntervals)
+    base += ` · ${t(locale, 'sleepIntervalsTitle')}: ${values.sleepIntervals.length}`
+    if (values.sleepDurationSource) {
+      base += ` · ${t(locale, 'sleepDurationSource')}: ${
+        values.sleepDurationSource === 'overall' ? t(locale, 'sleep') : t(locale, 'sleepIntervalsSum')
+      }`
+    } else if (hoursLabel && total !== null) {
+      base += ` · ${t(locale, 'sleepNoDoubleSum')}`
+    }
+  }
+  return base
+}
+
+function nutritionReviewLabel(locale: 'ru' | 'en', values: CheckinDraftValues, isChange: boolean): string {
+  if (isChange || values.nutritionFill === 'not_applicable') return t(locale, 'notApplicable')
+  if (values.nutritionFill === 'skipped' || values.nutritionFill === null) return t(locale, 'answerSkipped')
+  const period =
+    values.nutritionPeriodStartLocal.trim() !== '' || values.nutritionPeriodEndLocal.trim() !== ''
+      ? ` · ${t(locale, 'nutritionPeriodTitle')}`
+      : ''
+  if (values.fluidSkip) return `${t(locale, 'fillSection')}${period} · ${t(locale, 'fluidNotTracked')}`
+  if (values.fluidRaw.trim() === '') return `${t(locale, 'fillSection')}${period}`
+  const volume = values.fluidRaw.trim() === '0' ? t(locale, 'fluidZeroAnswer') : `${values.fluidRaw} mL`
+  const completeness =
+    values.fluidCompleteness === null
+      ? t(locale, 'fluidCompletenessRequired')
+      : values.fluidCompleteness === 'full'
+        ? locale === 'ru'
+          ? 'полный учёт'
+          : 'complete'
+        : values.fluidCompleteness === 'partial'
+          ? locale === 'ru'
+            ? 'частичный учёт'
+            : 'partial'
+          : t(locale, 'answerUnknown')
+  return `${t(locale, 'fillSection')}${period} · ${volume} · ${completeness}`
+}
+
+function scoreReviewLabel(locale: 'ru' | 'en', value: number | null, skip: boolean): string {
+  if (skip) return t(locale, 'answerDeclined')
+  if (value === null) return t(locale, 'answerNone')
+  if (value === 0) return t(locale, 'answerZero')
+  return String(value)
+}
+
+function symptomReviewLabel(locale: 'ru' | 'en', values: CheckinDraftValues): string {
+  if (values.symptomPresence === 'declined') return t(locale, 'symptomsDeclined')
+  if (values.symptomPresence === 'no') return t(locale, 'symptomsNone')
+  if (values.symptomPresence === 'yes') return t(locale, 'symptomsCount', { count: values.symptoms.length })
+  return t(locale, 'answerNone')
 }
 
 function ChoiceMulti({
@@ -717,7 +1000,7 @@ async function createDraft(
       root_id: checkinId,
       reason: '',
       operation_id: null,
-      values: emptyCheckinDraft(type, now, sharing),
+      values: applyChangePathDefaults(emptyCheckinDraft(type, now, sharing)),
       updated_at: new Date().toISOString(),
     }
   }

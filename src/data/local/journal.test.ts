@@ -154,6 +154,7 @@ function draftRecord(): DraftRecord {
   values.overallState = 'fair'
   values.sleepHours = '7.5'
   values.sleepQualitySkip = true
+  values.nutritionFill = 'skipped'
   values.fatigue = 0
   values.stressSkip = true
   values.emotional = 'calm'

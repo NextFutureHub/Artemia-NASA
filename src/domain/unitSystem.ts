@@ -6,6 +6,7 @@ export type UnitSystem = (typeof UNIT_SYSTEMS)[number]
 export const KG_PER_LB = 0.45359237
 export const CM_PER_INCH = 2.54
 export const INCHES_PER_FOOT = 12
+export const ML_PER_US_FL_OZ = 29.5735295625
 
 export type DisplayUnit =
   | 'celsius'
@@ -17,6 +18,8 @@ export type DisplayUnit =
   | 'bpm'
   | 'percent'
   | 'mmhg'
+  | 'ml'
+  | 'fl_oz'
 
 export function isUnitSystem(value: unknown): value is UnitSystem {
   return value === 'metric' || value === 'us'
@@ -98,6 +101,27 @@ export function formatMassFromKg(kg: number | null, system: UnitSystem): string 
   if (kg === null || !Number.isFinite(kg)) return ''
   if (system === 'us') return formatOneDecimal(kgToLb(kg))
   return formatOneDecimal(kg)
+}
+
+export function mlToFlOz(ml: number): number {
+  return ml / ML_PER_US_FL_OZ
+}
+
+export function flOzToMl(flOz: number): number {
+  return flOz * ML_PER_US_FL_OZ
+}
+
+export function formatFluidFromMl(ml: number | null, system: UnitSystem): string {
+  if (ml === null || !Number.isFinite(ml)) return ''
+  if (system === 'us') return formatOneDecimal(mlToFlOz(ml))
+  return String(Math.round(ml))
+}
+
+export function fluidDraftToMl(raw: string, system: UnitSystem): number | null {
+  const value = parseLooseNumber(raw)
+  if (value === null) return null
+  if (system === 'us') return Math.round(flOzToMl(value))
+  return Math.round(value)
 }
 
 export function formatHeightFromCm(cm: number | null, system: UnitSystem): string {
@@ -208,35 +232,40 @@ export function displayUnitLabel(
   if (unit === 'lb') return 'lb'
   if (unit === 'bpm') return locale === 'ru' ? 'уд/мин' : 'bpm'
   if (unit === 'percent') return '%'
+  if (unit === 'ml') return 'mL'
+  if (unit === 'fl_oz') return locale === 'ru' ? 'fl oz (US)' : 'US fl oz'
   return locale === 'ru' ? 'мм рт. ст.' : 'mmHg'
 }
 
 export function metricDisplayUnit(
-  metric: 'heart_rate' | 'temperature' | 'spo2',
+  metric: 'heart_rate' | 'temperature' | 'spo2' | 'body_mass',
   system: UnitSystem,
 ): DisplayUnit {
   if (metric === 'temperature') return temperatureDisplayUnit(system)
   if (metric === 'spo2') return 'percent'
+  if (metric === 'body_mass') return massDisplayUnit(system)
   return 'bpm'
 }
 
-/** Format stored base measurement for UI. Temperature base is always °C. */
+/** Format stored base measurement for UI. Temperature base is always °C; mass base is kg. */
 export function formatStoredMeasurement(
-  metric: 'heart_rate' | 'temperature' | 'spo2',
+  metric: 'heart_rate' | 'temperature' | 'spo2' | 'body_mass',
   value: number | null,
   system: UnitSystem,
 ): string {
   if (value === null) return ''
   if (metric === 'temperature') return formatTemperatureFromCelsius(value, system)
+  if (metric === 'body_mass') return formatMassFromKg(value, system)
   if (metric === 'heart_rate' || metric === 'spo2') return String(Math.round(value))
   return String(value)
 }
 
 export function inputUnitForMetric(
-  metric: 'heart_rate' | 'temperature' | 'spo2',
+  metric: 'heart_rate' | 'temperature' | 'spo2' | 'body_mass',
   system: UnitSystem,
-): 'bpm' | 'celsius' | 'fahrenheit' | 'percent' {
+): 'bpm' | 'celsius' | 'fahrenheit' | 'percent' | 'kg' | 'lb' {
   if (metric === 'temperature') return system === 'us' ? 'fahrenheit' : 'celsius'
   if (metric === 'spo2') return 'percent'
+  if (metric === 'body_mass') return system === 'us' ? 'lb' : 'kg'
   return 'bpm'
 }

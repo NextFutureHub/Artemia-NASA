@@ -84,7 +84,7 @@ const measurementValueSchema = z
     mission_id: uuidSchema,
     metric: z.enum(METRICS),
     value: z.number().nullable(),
-    unit: z.enum(['bpm', 'celsius', 'percent']),
+    unit: z.enum(['bpm', 'celsius', 'percent', 'kg']),
     source: z.enum(MEASUREMENT_SOURCES),
     quality: z.enum(MEASUREMENT_QUALITIES),
     quality_reasons: z.array(z.string().min(1).max(80)).max(20),
@@ -116,6 +116,9 @@ const measurementValueSchema = z
     if (measurement.metric === 'spo2' && measurement.unit !== 'percent') {
       ctx.addIssue({ code: 'custom', path: ['unit'], message: 'unit_mismatch' })
     }
+    if (measurement.metric === 'body_mass' && measurement.unit !== 'kg') {
+      ctx.addIssue({ code: 'custom', path: ['unit'], message: 'unit_mismatch' })
+    }
     if (measurement.metric === 'heart_rate' && !integerInRange(measurement.value, 20, 250)) {
       ctx.addIssue({ code: 'custom', path: ['value'], message: 'value_out_of_range' })
     }
@@ -128,13 +131,19 @@ const measurementValueSchema = z
         ctx.addIssue({ code: 'custom', path: ['value'], message: 'value_out_of_range' })
       }
     }
+    if (measurement.metric === 'body_mass') {
+      const scaled = measurement.value * 10
+      if (measurement.value < 20 || measurement.value > 300 || Math.abs(scaled - Math.round(scaled)) > 1e-6) {
+        ctx.addIssue({ code: 'custom', path: ['value'], message: 'value_out_of_range' })
+      }
+    }
   })
 
 const snapshotMeasurementSchema = z.strictObject({
   measurement_id: uuidSchema,
   metric: z.enum(METRICS),
   value: z.number().nullable(),
-  unit: z.enum(['bpm', 'celsius', 'percent']),
+  unit: z.enum(['bpm', 'celsius', 'percent', 'kg']),
   source: z.enum(MEASUREMENT_SOURCES),
   quality: z.enum(MEASUREMENT_QUALITIES),
   recorded_at: timestampSchema,

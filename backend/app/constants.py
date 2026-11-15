@@ -17,8 +17,9 @@ CARE_ORDER_KINDS = (
     "recommendation",
     "symptom_monitor",
     "follow_up",
+    "workout",
 )
-CARE_ORDER_DECISIONS = ("done", "skipped", "acknowledged")
+CARE_ORDER_DECISIONS = ("done", "skipped", "acknowledged", "unable")
 
 MAX_BODY_BYTES = 256 * 1024
 
@@ -46,7 +47,23 @@ CYCLE_CONTEXTS = ("natural", "suppression_regimen", "other")
 PLAN_ADHERENCE = ("on_plan", "missed_or_changed")
 SHARING_MODES = ("device_only", "assigned_doctor")
 CHECKIN_TYPES = ("daily", "change")
-METRICS = ("heart_rate", "temperature", "spo2")
+METRICS = ("heart_rate", "temperature", "spo2", "body_mass")
+SLEEPINESS_VALUES = ("none", "mild", "marked")
+AWAKENINGS_VALUES = ("none", "occurred", "unknown")
+SLEEP_PLAN_DEVIATION = ("no", "yes", "no_plan", "unknown")
+SLEEP_INTERFERING = ("noise", "light", "tasks", "discomfort", "other")
+SLEEP_INTERVAL_KINDS = ("primary", "additional")
+SLEEP_INTERVAL_QUALITIES = ("slept", "in_bed")
+SLEEP_DURATION_SOURCES = ("overall", "intervals")
+SECTION_FILL = ("filled", "skipped", "not_applicable")
+APPETITE_VALUES = ("usual", "decreased", "increased")
+MEAL_PLAN_VALUES = ("full", "partial", "not_done", "no_plan", "unknown")
+NUTRITION_DEVIATION = ("no_appetite", "nausea", "no_time", "other", "declined")
+FLUID_COMPLETENESS = ("full", "partial", "unknown")
+FLUID_ML_MAX = 50_000
+ACTIVITY_TYPES = ("aerobic", "strength", "other")
+ACTIVITY_COMPLETIONS = ("full", "partial", "skipped")
+ACTIVITY_SKIP_REASONS = ("no_time", "no_equipment", "wellbeing", "other", "declined")
 MEASUREMENT_SOURCES = ("manual", "usb", "simulated")
 MEASUREMENT_QUALITIES = ("unknown", "valid", "invalid", "insufficient")
 MEASUREMENT_CONTEXTS = ("rest", "after_exertion", "other", "unspecified")

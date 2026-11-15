@@ -324,8 +324,8 @@ class Measurement(Base):
         CheckConstraint("author_id = subject_id", name="author_is_subject"),
         CheckConstraint("schema_version = 1", name="schema_version"),
         CheckConstraint("device_id ~ '^[A-Za-z0-9_.:-]{1,128}$'", name="device_id_shape"),
-        CheckConstraint("metric in ('heart_rate', 'temperature', 'spo2')", name="metric_values"),
-        CheckConstraint("unit in ('bpm', 'celsius', 'percent')", name="unit_values"),
+        CheckConstraint("metric in ('heart_rate', 'temperature', 'spo2', 'body_mass')", name="metric_values"),
+        CheckConstraint("unit in ('bpm', 'celsius', 'percent', 'kg')", name="unit_values"),
         CheckConstraint("source in ('manual', 'usb', 'simulated')", name="source_values"),
         CheckConstraint("quality in ('unknown', 'valid', 'invalid', 'insufficient')", name="quality_values"),
         CheckConstraint(
@@ -345,7 +345,8 @@ class Measurement(Base):
         CheckConstraint(
             "(metric = 'heart_rate' and unit = 'bpm' and (value is null or (value = trunc(value) and value between 20 and 250))) "
             "or (metric = 'temperature' and unit = 'celsius' and (value is null or (value between 30 and 45 and value * 10 = trunc(value * 10)))) "
-            "or (metric = 'spo2' and unit = 'percent' and (value is null or (value = trunc(value) and value between 50 and 100)))",
+            "or (metric = 'spo2' and unit = 'percent' and (value is null or (value = trunc(value) and value between 50 and 100))) "
+            "or (metric = 'body_mass' and unit = 'kg' and (value is null or (value between 20 and 300 and value * 10 = trunc(value * 10))))",
             name="metric_unit_range",
         ),
         Index("measurements_subject_idx", "subject_id", "mission_id", "recorded_at"),
@@ -623,8 +624,11 @@ class CareOrder(Base):
     doctor_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), ForeignKey("profiles.id", ondelete="RESTRICT"))
     kind: Mapped[str] = mapped_column(Text)
     title: Mapped[str] = mapped_column(Text)
+    goal: Mapped[str | None] = mapped_column(Text)
     instructions: Mapped[str] = mapped_column(Text)
     schedule_text: Mapped[str] = mapped_column(Text, server_default=text("''"))
+    start_at: Mapped[datetime] = mapped_column(timestamptz, server_default=text("now()"))
+    review_at: Mapped[datetime | None] = mapped_column(timestamptz)
     due_at: Mapped[datetime | None] = mapped_column(timestamptz)
     status: Mapped[str] = mapped_column(Text, server_default=text("'active'"))
     revision_no: Mapped[int] = mapped_column(Integer, server_default=text("1"))
@@ -641,11 +645,12 @@ class CareOrder(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "kind in ('examination', 'measurement', 'recommendation', 'symptom_monitor', 'follow_up')",
+            "kind in ('examination', 'measurement', 'recommendation', 'symptom_monitor', 'follow_up', 'workout')",
             name="care_order_kind_values",
         ),
         CheckConstraint("status in ('active', 'cancelled', 'completed')", name="care_order_status_values"),
         CheckConstraint("char_length(title) between 1 and 120", name="care_order_title_length"),
+        CheckConstraint("goal is null or char_length(goal) between 1 and 500", name="care_order_goal_length"),
         CheckConstraint("char_length(instructions) between 1 and 3000", name="care_order_instructions_length"),
         CheckConstraint("char_length(schedule_text) <= 500", name="care_order_schedule_length"),
         CheckConstraint(
@@ -677,7 +682,8 @@ class CareOrderEvent(Base):
     __table_args__ = (
         CheckConstraint(
             "event_type in ("
-            "'created', 'revised', 'cancelled', 'completed_by_crew', 'skipped_by_crew', 'acknowledged')",
+            "'created', 'revised', 'cancelled', 'completed_by_crew', 'skipped_by_crew', "
+            "'unable_by_crew', 'acknowledged')",
             name="care_order_event_type_values",
         ),
         CheckConstraint("detail is null or char_length(detail) <= 500", name="care_order_event_detail_length"),
@@ -694,6 +700,8 @@ class CareOrderResponse(Base):
     mission_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), ForeignKey("missions.id", ondelete="RESTRICT"))
     decision: Mapped[str] = mapped_column(Text)
     note: Mapped[str | None] = mapped_column(Text)
+    link_note: Mapped[str | None] = mapped_column(Text)
+    activity_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True))
     recorded_at: Mapped[datetime] = mapped_column(timestamptz)
     created_at_device: Mapped[datetime] = mapped_column(timestamptz)
     operation_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True))
@@ -702,8 +710,15 @@ class CareOrderResponse(Base):
 
     __table_args__ = (
         UniqueConstraint("operation_id", name="uq_care_order_responses_operation_id"),
-        CheckConstraint("decision in ('done', 'skipped', 'acknowledged')", name="care_order_decision_values"),
+        CheckConstraint(
+            "decision in ('done', 'skipped', 'acknowledged', 'unable')",
+            name="care_order_decision_values",
+        ),
         CheckConstraint("note is null or char_length(note) between 1 and 1000", name="care_order_note_length"),
+        CheckConstraint(
+            "link_note is null or char_length(link_note) between 1 and 300",
+            name="care_order_link_note_length",
+        ),
         CheckConstraint("payload_hash ~ '^[0-9a-f]{64}$'", name="care_order_response_hash_shape"),
         Index("care_order_responses_order_idx", "order_id", "created_at_server"),
     )

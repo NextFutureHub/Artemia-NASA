@@ -64,6 +64,8 @@ def test_commander_and_admin_are_denied_medicine_including_care_orders(client):
             "mission_id": mission_id,
             "decision": "done",
             "note": None,
+            "link_note": None,
+            "activity_id": None,
             "recorded_at": RECORDED_AT,
             "created_at_device": RECORDED_AT,
         }

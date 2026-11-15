@@ -3,12 +3,13 @@ import type { MeasurementContext, Metric } from './enums.ts'
 import { measurementOperationSchema } from './operation.ts'
 import {
   inputUnitForMetric,
+  massDraftToKg,
   parseLooseNumber,
   temperatureDraftToCelsius,
   type UnitSystem,
 } from './unitSystem.ts'
 
-const BASE_UNITS = { heart_rate: 'bpm', temperature: 'celsius', spo2: 'percent' } as const
+const BASE_UNITS = { heart_rate: 'bpm', temperature: 'celsius', spo2: 'percent', body_mass: 'kg' } as const
 
 export type ManualMeasurementDraft = {
   metric: Metric | null
@@ -23,7 +24,7 @@ export type ManualMeasurementIssue = { path: string; message: string }
 
 export type InspectedMeasurement = ReturnType<typeof measurementOperationSchema.parse> & {
   input_value: number | null
-  input_unit: 'bpm' | 'celsius' | 'fahrenheit' | 'percent' | null
+  input_unit: 'bpm' | 'celsius' | 'fahrenheit' | 'percent' | 'kg' | 'lb' | null
 }
 
 export function inspectManualMeasurement(
@@ -60,6 +61,11 @@ export function inspectManualMeasurement(
     if (celsius === null) return { payload: null, issues: [{ path: 'rawValue', message: 'invalid' }] }
     // Quantize to 0.1 °C for storage without chaining display rounding.
     baseValue = Math.round(celsius * 10) / 10
+  }
+  if (draft.metric === 'body_mass') {
+    const kg = massDraftToKg(draft.rawValue, identity.unitSystem)
+    if (kg === null) return { payload: null, issues: [{ path: 'rawValue', message: 'invalid' }] }
+    baseValue = Math.round(kg * 10) / 10
   }
 
   const inputUnit = inputUnitForMetric(draft.metric, identity.unitSystem)

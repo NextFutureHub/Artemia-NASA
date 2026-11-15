@@ -60,5 +60,6 @@ function readyDraft(): CheckinDraftValues {
   values.emotional = 'calm'
   values.symptomPresence = 'no'
   values.reviewRequested = false
+  values.nutritionFill = 'skipped'
   return values
 }

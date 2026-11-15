@@ -5,6 +5,7 @@ export function metricLabel(locale: Locale, metric: Metric | string): string {
   if (metric === 'heart_rate') return t(locale, 'heartRate')
   if (metric === 'temperature') return t(locale, 'temperature')
   if (metric === 'spo2') return t(locale, 'spo2')
+  if (metric === 'body_mass') return t(locale, 'bodyMass')
   return metric
 }
 
@@ -39,6 +40,7 @@ export function careKindLabel(locale: Locale, kind: string): string {
   if (kind === 'recommendation') return t(locale, 'careKindRecommendation')
   if (kind === 'symptom_monitor') return t(locale, 'careKindSymptom')
   if (kind === 'follow_up') return t(locale, 'careKindFollowUp')
+  if (kind === 'workout') return t(locale, 'careKindWorkout')
   return kind
 }
 

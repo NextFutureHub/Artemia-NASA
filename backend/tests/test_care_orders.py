@@ -25,8 +25,11 @@ def test_doctor_creates_and_crew_responds_while_strangers_are_denied(client):
             "id": order_id,
             "kind": "measurement",
             "title": "Pulse this evening",
+            "goal": "Observe resting pulse",
             "instructions": "Enter a resting pulse before sleep.",
             "schedule_text": "Once today",
+            "start_at": recorded,
+            "review_at": due,
             "due_at": due,
         },
     )
@@ -34,6 +37,8 @@ def test_doctor_creates_and_crew_responds_while_strangers_are_denied(client):
     body = created.json()
     assert body["kind"] == "measurement"
     assert body["status"] == "active"
+    assert body["goal"] == "Observe resting pulse"
+    assert body["start_at"] is not None
     assert body["prototype_limit"] == "observation_task_not_prescription"
     assert "medication" not in created.text.lower()
 
@@ -57,6 +62,8 @@ def test_doctor_creates_and_crew_responds_while_strangers_are_denied(client):
         "mission_id": mission_id,
         "decision": "done",
         "note": "Entered 68 bpm",
+        "link_note": None,
+        "activity_id": None,
         "recorded_at": recorded,
         "created_at_device": recorded,
     }
@@ -93,6 +100,8 @@ def test_doctor_creates_and_crew_responds_while_strangers_are_denied(client):
         "mission_id": mission_id,
         "decision": "done",
         "note": None,
+        "link_note": None,
+        "activity_id": None,
         "recorded_at": recorded,
         "created_at_device": recorded,
     }
@@ -109,7 +118,8 @@ def test_doctor_creates_and_crew_responds_while_strangers_are_denied(client):
     )
     assert foreign.status_code in (403, 422)
 
-    revised = client.post(
+    # Order already completed by crew — revise must stay blocked.
+    revised_completed = client.post(
         f"/ground/orders/{order_id}/revise",
         headers=auth(doctor),
         json={
@@ -120,7 +130,7 @@ def test_doctor_creates_and_crew_responds_while_strangers_are_denied(client):
             "due_at": due,
         },
     )
-    assert revised.status_code == 422
+    assert revised_completed.status_code == 422
 
     second_id = str(uuid4())
     second = client.post(
@@ -132,9 +142,10 @@ def test_doctor_creates_and_crew_responds_while_strangers_are_denied(client):
             "title": "Short check-in",
             "instructions": "Write how sleep felt after the measurement.",
             "schedule_text": "Tomorrow morning",
+            "start_at": recorded,
         },
     )
-    assert second.status_code == 200
+    assert second.status_code == 200, second.text
     cancelled = client.post(
         f"/ground/orders/{second_id}/cancel",
         headers=auth(doctor),
@@ -143,3 +154,55 @@ def test_doctor_creates_and_crew_responds_while_strangers_are_denied(client):
     assert cancelled.status_code == 200
     assert cancelled.json()["status"] == "cancelled"
     assert cancelled.json()["ack_required"] is True
+
+
+def test_doctor_revise_updates_goal_start_and_review(client):
+    seed_people()
+    doctor = login(client, "doctor@demo.artemia.local")
+    mission_id = str(MISSION_ID)
+    order_id = str(uuid4())
+    now = datetime.now(timezone.utc)
+    start = now.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    review = (now + timedelta(days=3)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    new_start = (now + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    new_review = (now + timedelta(days=5)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+    created = client.post(
+        f"/ground/crew/{MIRA}/orders?mission_id={mission_id}",
+        headers=auth(doctor),
+        json={
+            "id": order_id,
+            "kind": "recommendation",
+            "title": "Hydration note",
+            "goal": "Initial goal",
+            "instructions": "Drink water with meals.",
+            "schedule_text": "Daily",
+            "start_at": start,
+            "review_at": review,
+        },
+    )
+    assert created.status_code == 200, created.text
+    assert created.json()["goal"] == "Initial goal"
+    assert created.json()["revision_no"] == 1
+
+    revised = client.post(
+        f"/ground/orders/{order_id}/revise",
+        headers=auth(doctor),
+        json={
+            "reason": "Adjust observation window",
+            "title": "Hydration note",
+            "goal": "Updated hydration goal",
+            "instructions": "Drink water with meals and after EVA.",
+            "schedule_text": "Daily",
+            "start_at": new_start,
+            "review_at": new_review,
+        },
+    )
+    assert revised.status_code == 200, revised.text
+    body = revised.json()
+    assert body["revision_no"] == 2
+    assert body["goal"] == "Updated hydration goal"
+    assert body["start_at"].startswith(new_start[:19])
+    assert body["review_at"].startswith(new_review[:19])
+    assert body["revise_reason"] == "Adjust observation window"
+    assert body["ack_required"] is True
