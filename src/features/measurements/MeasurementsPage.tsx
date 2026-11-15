@@ -6,6 +6,13 @@ import { dateToZonedInput, formatZoned, zonedInputToDate } from '../../domain/cl
 import { metricLabel, qualityLabel, sourceLabel } from '../../domain/labels.ts'
 import { inspectManualMeasurement, type ManualMeasurementDraft } from '../../domain/manualMeasurement.ts'
 import type { Metric } from '../../domain/enums.ts'
+import {
+  displayUnitLabel,
+  formatStoredMeasurement,
+  metricDisplayUnit,
+  switchDraftField,
+  type UnitSystem,
+} from '../../domain/unitSystem.ts'
 import { db } from '../../data/local/db.ts'
 import { commitMeasurement, listMeasurements } from '../../data/local/journal.ts'
 import { environmentId } from '../../data/remote/client.ts'
@@ -16,10 +23,12 @@ export function MeasurementsPage() {
   const session = useSession()
   const locale = session.locale
   const profile = session.profile
+  const unitSystem = session.unitSystem
   const [tab, setTab] = useState<'new' | 'history'>('new')
   const [rows, setRows] = useState<LocalMeasurement[]>([])
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [unitError, setUnitError] = useState('')
   const [saving, setSaving] = useState(false)
   const form = useForm<ManualMeasurementDraft>({
     defaultValues: {
@@ -41,6 +50,22 @@ export function MeasurementsPage() {
   const serial = 'serial' in navigator
   const values = form.watch()
 
+  async function onUnitSystemChange(next: UnitSystem) {
+    const switched = switchDraftField(
+      values.metric === 'temperature' ? 'temperature' : values.metric === 'spo2' ? 'spo2' : values.metric === 'heart_rate' ? 'heart_rate' : 'temperature',
+      values.rawValue,
+      unitSystem,
+      next,
+    )
+    if (!switched.ok) {
+      setUnitError(t(locale, 'unitsBlocked'))
+      return
+    }
+    setUnitError('')
+    form.setValue('rawValue', switched.next)
+    await session.setUnitSystem(next)
+  }
+
   async function onSave() {
     if (saving || !profile) return
     const now = new Date()
@@ -52,11 +77,13 @@ export function MeasurementsPage() {
       timeZone: profile.timezone,
       now,
       demoDatasetId: profile.demo_dataset_id,
+      unitSystem,
     })
     if (!inspected.payload) {
       setError(issueText(locale, inspected.issues[0]?.message ?? 'invalid'))
       return
     }
+    const { input_value, input_unit, ...operationPayload } = inspected.payload
     setSaving(true)
     setError('')
     const recorded = zonedInputToDate(form.getValues().recordedAtLocal, profile.timezone) ?? now
@@ -66,14 +93,16 @@ export function MeasurementsPage() {
       environment_id: environmentId,
       operation_id: crypto.randomUUID(),
       mission_id: profile.mission_id,
-      metric: inspected.payload.metric,
-      value: inspected.payload.value,
-      unit: inspected.payload.unit,
+      metric: operationPayload.metric,
+      value: operationPayload.value,
+      unit: operationPayload.unit,
+      input_value,
+      input_unit,
       source: 'manual',
       quality: 'unknown',
       quality_reasons: [],
-      context: inspected.payload.context,
-      note: inspected.payload.note,
+      context: operationPayload.context,
+      note: operationPayload.note,
       instrument: values.instrument.trim() || null,
       device_id: profile.device_id,
       recorded_at: recorded.toISOString(),
@@ -84,7 +113,7 @@ export function MeasurementsPage() {
       payload_hash: '',
     }
     try {
-      const status = await commitMeasurement(db, { ownerId: profile.owner_id, environmentId }, row, inspected.payload, profile.general_exchange)
+      const status = await commitMeasurement(db, { ownerId: profile.owner_id, environmentId }, row, operationPayload, profile.general_exchange)
       if (status.status !== 'committed') {
         setError(t(locale, 'saveDeviceFailed'))
       } else {
@@ -102,6 +131,18 @@ export function MeasurementsPage() {
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-3xl">{t(locale, 'measurements')}</h1>
+      <fieldset className="flex flex-wrap gap-3 rounded-xl border border-line p-3">
+        <legend className="px-1 text-sm">{t(locale, 'unitsSetting')}</legend>
+        <label className="flex min-h-11 items-center gap-2">
+          <input type="radio" name="measure-units" checked={unitSystem === 'metric'} onChange={() => void onUnitSystemChange('metric')} />
+          {t(locale, 'unitsEu')}
+        </label>
+        <label className="flex min-h-11 items-center gap-2">
+          <input type="radio" name="measure-units" checked={unitSystem === 'us'} onChange={() => void onUnitSystemChange('us')} />
+          {t(locale, 'unitsUs')}
+        </label>
+        {unitError ? <Banner tone="attention">{unitError}</Banner> : null}
+      </fieldset>
       <div className="flex gap-2">
         <Button variant={tab === 'new' ? 'primary' : 'quiet'} onClick={() => setTab('new')}>
           {t(locale, 'newMeasurement')}
@@ -142,7 +183,7 @@ export function MeasurementsPage() {
               <option value="spo2">{t(locale, 'spo2')}</option>
             </select>
           </Field>
-          <Field id="rawValue" label={t(locale, 'value')} error={error || undefined} hint={unitHint(locale, values.metric)}>
+          <Field id="rawValue" label={t(locale, 'value')} error={error || undefined} hint={unitHint(locale, values.metric, unitSystem)}>
             <input id="rawValue" inputMode="decimal" className="numeric min-h-11 rounded-xl border border-line bg-canvas px-3" {...form.register('rawValue')} />
           </Field>
           <Field id="recordedAtLocal" label={t(locale, 'recordedAt')} hint={profile.timezone}>
@@ -174,7 +215,8 @@ export function MeasurementsPage() {
           {rows.map((row) => (
             <li key={row.id} className="rounded-xl border border-line p-3">
               <p className="numeric">
-                {metricLabel(locale, row.metric)} {row.value ?? '—'} {row.unit}
+                {metricLabel(locale, row.metric)} {formatStoredMeasurement(row.metric, row.value, unitSystem) || '—'}{' '}
+                {displayUnitLabel(locale, metricDisplayUnit(row.metric, unitSystem))}
               </p>
               <p className="text-sm text-muted">
                 {sourceLabel(locale, row.source)} · {qualityLabel(locale, row.quality)} ·{' '}
@@ -197,9 +239,9 @@ export function MeasurementsPage() {
   )
 }
 
-function unitHint(locale: 'ru' | 'en', metric: Metric | null): string {
+function unitHint(locale: 'ru' | 'en', metric: Metric | null, system: UnitSystem): string {
   if (metric === 'heart_rate') return t(locale, 'unitBpm')
-  if (metric === 'temperature') return t(locale, 'unitC')
+  if (metric === 'temperature') return system === 'us' ? t(locale, 'unitF') : t(locale, 'unitC')
   if (metric === 'spo2') return t(locale, 'unitPercent')
   return ''
 }

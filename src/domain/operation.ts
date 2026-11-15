@@ -156,6 +156,7 @@ export const reportSnapshotSchema = z.strictObject({
   message: z.string().min(1).max(2000).nullable(),
   recipient_assignment_id: uuidSchema,
   summary: z.string().min(1).max(2000),
+  unit_system: z.enum(['metric', 'us']),
 })
 
 export const reportBundleSchema = z
@@ -216,6 +217,7 @@ export const profilePreferencesSchema = z.strictObject({
   reproductive_enabled: z.boolean(),
   cycle_context: z.enum(['natural', 'suppression_regimen', 'other']).nullable(),
   default_sharing: z.enum(SHARING_MODES),
+  unit_system: z.enum(['metric', 'us']),
 })
 
 export const consentChangeSchema = z.strictObject({

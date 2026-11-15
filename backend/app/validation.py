@@ -148,7 +148,9 @@ SNAPSHOT_KEYS = {
     "revision_ids",
     "schema_version",
     "summary",
+    "unit_system",
 }
+UNIT_SYSTEMS = ("metric", "us")
 SNAPSHOT_MEASUREMENT_KEYS = {"measurement_id", "metric", "quality", "recorded_at", "source", "unit", "value"}
 INVALIDATION_KEYS = {
     "created_at_device",
@@ -168,6 +170,7 @@ PREFERENCE_KEYS = {
     "reproductive_enabled",
     "sex_context",
     "timezone",
+    "unit_system",
 }
 CONSENT_KEYS = {
     "assignment_id",
@@ -574,6 +577,8 @@ def validate_preferences(value: object) -> dict[str, Any]:
         fail("profile_fields")
     if payload["default_sharing"] not in SHARING_MODES or not isinstance(payload["reproductive_enabled"], bool):
         fail("profile_fields")
+    if payload["unit_system"] not in UNIT_SYSTEMS:
+        fail("unit_system")
     age = payload["age"]
     if age is not None and (not is_int(age) or not 18 <= age <= 100):
         fail("age")
@@ -610,6 +615,8 @@ def validate_report_shape(value: object) -> dict[str, Any]:
     recipient = require_uuid(report["recipient_assignment_id"])
     if snapshot["schema_version"] != 1 or isinstance(snapshot["schema_version"], bool):
         fail("snapshot_mismatch")
+    if snapshot.get("unit_system") not in UNIT_SYSTEMS:
+        fail("unit_system")
     if require_uuid(snapshot["recipient_assignment_id"]) != recipient:
         fail("snapshot_mismatch")
     if snapshot["message"] != report["message"]:

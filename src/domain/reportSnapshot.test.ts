@@ -31,6 +31,7 @@ test('preview and snapshot are the same object contents', () => {
     message: null,
     recipientAssignmentId: recipient,
     locale: 'ru',
+    unitSystem: 'metric',
   })
   assert.ok(built.snapshot)
   const preview = built.snapshot

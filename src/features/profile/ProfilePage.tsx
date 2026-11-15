@@ -3,10 +3,11 @@ import { useNavigate } from 'react-router-dom'
 import { useSession } from '../../app/session.tsx'
 import { Banner, Button, Field } from '../../components/ui.tsx'
 import { db } from '../../data/local/db.ts'
-import { clearOwner, latestConsent, queueConsentDecision, updateProfile } from '../../data/local/journal.ts'
+import { clearOwner, latestConsent, queueConsentDecision, queueProfilePreferences, updateProfile } from '../../data/local/journal.ts'
 import { consentApplyState } from '../../domain/reportSnapshot.ts'
 import { environmentId } from '../../data/remote/client.ts'
 import { formatZoned } from '../../domain/clock.ts'
+import type { UnitSystem } from '../../domain/unitSystem.ts'
 import { t } from '../../i18n/copy.ts'
 
 export function ProfilePage() {
@@ -19,6 +20,7 @@ export function ProfilePage() {
   const [personal, setPersonal] = useState(profile?.reproductive_enabled ?? false)
   const [exchange, setExchange] = useState(profile?.general_exchange ?? false)
   const [sensitive, setSensitive] = useState(profile?.sensitive_sharing ?? 'device_only')
+  const [units, setUnits] = useState<UnitSystem>(profile?.unit_system ?? session.unitSystem)
   const [message, setMessage] = useState('')
   const [phrase, setPhrase] = useState('')
   const [consentNote, setConsentNote] = useState('')
@@ -36,8 +38,11 @@ export function ProfilePage() {
       reproductive_enabled: personal,
       general_exchange: exchange,
       sensitive_sharing: sensitive,
+      unit_system: units,
     }
     await updateProfile(db, next)
+    await session.setUnitSystem(units)
+    await queueProfilePreferences(db, { ownerId: current.owner_id, environmentId }, crypto.randomUUID())
     await session.refreshLocal()
     setMessage(t(locale, 'settingsSaved'))
   }
@@ -59,6 +64,18 @@ export function ProfilePage() {
       <section className="flex flex-col gap-3 rounded-xl border border-line p-4">
         <h2>{t(locale, 'journalSettings')}</h2>
         <p>{current.timezone}</p>
+        <fieldset className="flex flex-col gap-2">
+          <legend>{t(locale, 'unitsSetting')}</legend>
+          <label className="flex min-h-11 items-center gap-2">
+            <input type="radio" name="unit-system" checked={units === 'metric'} onChange={() => setUnits('metric')} />
+            {t(locale, 'unitsEu')}
+          </label>
+          <label className="flex min-h-11 items-center gap-2">
+            <input type="radio" name="unit-system" checked={units === 'us'} onChange={() => setUnits('us')} />
+            {t(locale, 'unitsUs')}
+          </label>
+          <p className="text-sm text-muted">{t(locale, 'unitsHint')}</p>
+        </fieldset>
         <label className="flex min-h-11 items-center gap-2">
           <input type="checkbox" checked={reminder} onChange={(event) => setReminder(event.target.checked)} />
           {t(locale, 'reminder')}

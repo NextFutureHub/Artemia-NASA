@@ -359,6 +359,7 @@ def _apply_preferences(session: Session, actor_id: UUID, payload: dict[str, Any]
     now = datetime.now(timezone.utc)
     profile.locale = body["locale"]
     profile.timezone = body["timezone"]
+    profile.unit_system = body["unit_system"]
     profile.updated_at = now
     medical = session.get(MedicalProfile, actor_id)
     if medical is None:

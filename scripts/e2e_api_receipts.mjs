@@ -134,6 +134,7 @@ const snapshot = {
   message: null,
   recipient_assignment_id: assignmentId,
   summary: 'За период заполнено 1 записей. Запрос просмотра: нет. Прикреплено 0 измерений, из них 0 с неизвестным качеством.',
+  unit_system: 'metric',
 }
 const report = await postOp(mira, 'report_bundle', {
   report: {

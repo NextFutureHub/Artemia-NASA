@@ -51,6 +51,7 @@ class Profile(Base):
     callsign: Mapped[str] = mapped_column(Text)
     locale: Mapped[str] = mapped_column(Text, server_default=text("'ru'"))
     timezone: Mapped[str] = mapped_column(Text, server_default=text("'UTC'"))
+    unit_system: Mapped[str] = mapped_column(Text, server_default=text("'metric'"))
     created_at: Mapped[datetime] = mapped_column(timestamptz, server_default=text("now()"))
     updated_at: Mapped[datetime] = mapped_column(timestamptz, server_default=text("now()"))
 
@@ -59,6 +60,7 @@ class Profile(Base):
         CheckConstraint("char_length(callsign) between 2 and 20", name="callsign_length"),
         CheckConstraint("locale in ('ru', 'en')", name="locale_values"),
         CheckConstraint("timezone ~ '^[A-Za-z0-9_+./-]{1,64}$'", name="timezone_shape"),
+        CheckConstraint("unit_system in ('metric', 'us')", name="unit_system_values"),
     )
 
 

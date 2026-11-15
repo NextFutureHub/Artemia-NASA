@@ -154,6 +154,7 @@ async function seedProfile(database: ArtemiaDb): Promise<void> {
     reproductive_enabled: false,
     sensitive_sharing: 'device_only',
     general_exchange: true,
+    unit_system: 'metric',
     age: null,
     sex_context: null,
     device_id: 'web.device-1',

@@ -1,5 +1,6 @@
 import type { ReportReason } from './enums.ts'
 import { reportSnapshotSchema, type reportBundleSchema } from './operation.ts'
+import type { UnitSystem } from './unitSystem.ts'
 import type { z } from 'zod'
 
 export type ReportSnapshot = z.infer<typeof reportSnapshotSchema>
@@ -15,6 +16,7 @@ export type ReportBuildInput = {
   message: string | null
   recipientAssignmentId: string
   locale: 'ru' | 'en'
+  unitSystem: UnitSystem
   explanatoryRuleVersions?: ReportSnapshot['explanatory_rule_versions']
 }
 
@@ -47,6 +49,7 @@ export function buildReportSnapshot(input: ReportBuildInput): { snapshot: Report
     message: input.message,
     recipient_assignment_id: input.recipientAssignmentId,
     summary,
+    unit_system: input.unitSystem,
   }
   const parsed = reportSnapshotSchema.safeParse(candidate)
   if (!parsed.success) return { snapshot: null, issues: parsed.error.issues.map((issue) => issue.message) }

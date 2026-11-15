@@ -540,6 +540,17 @@ export const copy = {
   sourceDoesNotProve: { ru: 'Ссылка не подтверждает весь продукт.', en: 'The link does not confirm the whole product.' },
   basic: { ru: 'Основное', en: 'Basics' },
   journalSettings: { ru: 'Настройки журнала', en: 'Journal settings' },
+  unitsSetting: { ru: 'Единицы измерения', en: 'Units of measure' },
+  unitsEu: { ru: 'EU — метрические', en: 'EU — metric' },
+  unitsUs: { ru: 'US — американские', en: 'US — customary' },
+  unitsHint: {
+    ru: 'Меняет отображение температуры и других поддерживаемых показателей. Язык и часовой пояс не затрагиваются.',
+    en: 'Changes how temperature and other supported measures are shown. Language and time zone stay the same.',
+  },
+  unitsBlocked: {
+    ru: 'Завершите или очистите поле значения, прежде чем менять единицы.',
+    en: 'Finish or clear the value field before changing units.',
+  },
   privacy: { ru: 'Приватность', en: 'Privacy' },
   deviceSection: { ru: 'Устройство', en: 'Device' },
   readOnly: { ru: 'В этой сборке поле задаёт организатор', en: 'The organizer sets this field in this build' },
@@ -599,6 +610,7 @@ export const copy = {
   errors: { ru: 'Проверьте поля', en: 'Check the fields' },
   unitBpm: { ru: 'уд/мин', en: 'bpm' },
   unitC: { ru: '°C', en: '°C' },
+  unitF: { ru: '°F', en: '°F' },
   unitPercent: { ru: '%', en: '%' },
 } satisfies Record<string, Pair>
 

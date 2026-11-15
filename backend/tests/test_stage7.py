@@ -131,6 +131,7 @@ def _report(report_id, revision_id):
         "message": None,
         "recipient_assignment_id": str(ASSIGNMENT_MIRA),
         "summary": "Сводка без диагноза",
+        "unit_system": "metric",
     }
     return {
         "report": {

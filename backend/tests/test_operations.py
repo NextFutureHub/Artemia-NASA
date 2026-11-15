@@ -27,12 +27,14 @@ def test_preferences_invalidation_and_report_use_the_allowlist(client):
             "reproductive_enabled": True,
             "cycle_context": None,
             "default_sharing": "device_only",
+            "unit_system": "us",
         },
         uuid4(),
     )
     assert preferences.status_code == 200, preferences.text
     me = client.get("/auth/me", headers=auth(mira))
     assert me.json()["locale"] == "en"
+    assert me.json()["unit_system"] == "us"
     assert "age" not in me.json()
     assert count_rows(PersonalPreference) == 1
 
@@ -84,6 +86,7 @@ def test_preferences_invalidation_and_report_use_the_allowlist(client):
         "message": None,
         "recipient_assignment_id": str(ASSIGNMENT_MIRA),
         "summary": "Сводка без диагноза",
+        "unit_system": "metric",
     }
     report = _post(
         client,

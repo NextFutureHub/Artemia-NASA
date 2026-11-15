@@ -1,8 +1,14 @@
 import { zonedInputToDate } from './clock.ts'
 import type { MeasurementContext, Metric } from './enums.ts'
 import { measurementOperationSchema } from './operation.ts'
+import {
+  inputUnitForMetric,
+  parseLooseNumber,
+  temperatureDraftToCelsius,
+  type UnitSystem,
+} from './unitSystem.ts'
 
-const UNITS = { heart_rate: 'bpm', temperature: 'celsius', spo2: 'percent' } as const
+const BASE_UNITS = { heart_rate: 'bpm', temperature: 'celsius', spo2: 'percent' } as const
 
 export type ManualMeasurementDraft = {
   metric: Metric | null
@@ -15,6 +21,11 @@ export type ManualMeasurementDraft = {
 
 export type ManualMeasurementIssue = { path: string; message: string }
 
+export type InspectedMeasurement = ReturnType<typeof measurementOperationSchema.parse> & {
+  input_value: number | null
+  input_unit: 'bpm' | 'celsius' | 'fahrenheit' | 'percent' | null
+}
+
 export function inspectManualMeasurement(
   draft: ManualMeasurementDraft,
   identity: {
@@ -24,8 +35,9 @@ export function inspectManualMeasurement(
     timeZone: string
     now: Date
     demoDatasetId: string | null
+    unitSystem: UnitSystem
   },
-): { payload: ReturnType<typeof measurementOperationSchema.parse> | null; issues: ManualMeasurementIssue[] } {
+): { payload: InspectedMeasurement | null; issues: ManualMeasurementIssue[] } {
   const issues: ManualMeasurementIssue[] = []
   if (draft.metric === null) issues.push({ path: 'metric', message: 'required' })
   const recorded = zonedInputToDate(draft.recordedAtLocal, identity.timeZone)
@@ -37,19 +49,38 @@ export function inspectManualMeasurement(
   if (draft.note.trim().length > 300) issues.push({ path: 'note', message: 'too_long' })
   if (draft.metric === null || recorded === null || issues.length > 0) return { payload: null, issues }
 
-  const numeric = Number(draft.rawValue)
+  const inputNumeric = parseLooseNumber(draft.rawValue)
+  if (inputNumeric === null) {
+    return { payload: null, issues: [{ path: 'rawValue', message: 'invalid' }] }
+  }
+
+  let baseValue = inputNumeric
+  if (draft.metric === 'temperature') {
+    const celsius = temperatureDraftToCelsius(draft.rawValue, identity.unitSystem)
+    if (celsius === null) return { payload: null, issues: [{ path: 'rawValue', message: 'invalid' }] }
+    // Quantize to 0.1 °C for storage without chaining display rounding.
+    baseValue = Math.round(celsius * 10) / 10
+  }
+
+  const inputUnit = inputUnitForMetric(draft.metric, identity.unitSystem)
+  const metadata: Record<string, unknown> = {
+    input_value: inputNumeric,
+    input_unit: inputUnit,
+  }
+  if (draft.instrument.trim() !== '') metadata.instrument = draft.instrument.trim()
+
   const payload = {
     id: identity.id,
     mission_id: identity.missionId,
     metric: draft.metric,
-    value: numeric,
-    unit: UNITS[draft.metric],
+    value: baseValue,
+    unit: BASE_UNITS[draft.metric],
     source: 'manual' as const,
     quality: 'unknown' as const,
     quality_reasons: [] as string[],
     context: draft.context,
     note: draft.note.trim() === '' ? null : draft.note.trim(),
-    device_metadata: draft.instrument.trim() === '' ? null : { instrument: draft.instrument.trim() },
+    device_metadata: metadata,
     algorithm_version: null,
     attempt_id: null,
     device_id: identity.deviceId,
@@ -64,5 +95,12 @@ export function inspectManualMeasurement(
       : 'invalid'
     return { payload: null, issues: [{ path: 'rawValue', message }] }
   }
-  return { payload: parsed.data, issues: [] }
+  return {
+    payload: {
+      ...parsed.data,
+      input_value: inputNumeric,
+      input_unit: inputUnit,
+    },
+    issues: [],
+  }
 }

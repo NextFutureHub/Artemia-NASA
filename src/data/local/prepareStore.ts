@@ -59,6 +59,7 @@ export type PreparationBundle = {
     callsign: string
     locale: 'ru' | 'en'
     timezone: string
+    unit_system?: 'metric' | 'us'
   }
   mission: {
         id: string
@@ -87,6 +88,7 @@ export type PreparationBundle = {
     cycle_context: string | null
     default_sharing: 'device_only' | 'assigned_doctor'
   }
+  // unit_system lives on profile in preparation bundle
   sources: Array<Omit<SourceCache, 'owner_id' | 'environment_id' | 'source_id'> & { id: string }>
   rules: Array<Omit<RuleCache, 'owner_id' | 'environment_id'>>
   history: { checkins: ServerHistoryCheckin[]; measurements: ServerHistoryMeasurement[] }
@@ -126,6 +128,7 @@ export async function storePreparation(
     reproductive_enabled: choices.reproductiveEnabled,
     sensitive_sharing: choices.sensitiveSharing,
     general_exchange: choices.generalExchange,
+    unit_system: previous?.unit_system ?? bundle.profile.unit_system ?? 'metric',
     age: bundle.medical_profile.age,
     sex_context: bundle.medical_profile.sex_context,
     device_id: previous?.device_id ?? `web.${crypto.randomUUID()}`,
@@ -252,6 +255,8 @@ export async function storePreparation(
           metric: measurement.metric,
           value: measurement.value,
           unit: measurement.unit,
+          input_value: measurement.value,
+          input_unit: measurement.unit,
           source: measurement.source,
           quality: measurement.quality,
           quality_reasons: measurement.quality_reasons,

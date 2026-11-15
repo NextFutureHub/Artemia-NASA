@@ -431,6 +431,7 @@ export async function queueProfilePreferences(database: ArtemiaDb, scope: Scope,
     reproductive_enabled: profile.reproductive_enabled,
     cycle_context: null,
     default_sharing: profile.sensitive_sharing,
+    unit_system: profile.unit_system ?? 'metric',
   })
   const savedAt = new Date().toISOString()
   const payloadHash = await hashOperation({ schemaVersion: SCHEMA_VERSION, type: 'profile_preferences', payload })
@@ -1059,6 +1060,12 @@ function cursorId(scope: Scope): string {
 }
 
 async function enqueueMeasurement(database: ArtemiaDb, scope: Scope, measurement: LocalMeasurement, savedAt: string): Promise<void> {
+  const metadata: Record<string, unknown> = {}
+  if (measurement.instrument) metadata.instrument = measurement.instrument
+  if (measurement.input_value !== null && measurement.input_unit) {
+    metadata.input_value = measurement.input_value
+    metadata.input_unit = measurement.input_unit
+  }
   const payload = measurementOperationSchema.parse({
     id: measurement.id,
     mission_id: measurement.mission_id,
@@ -1070,7 +1077,7 @@ async function enqueueMeasurement(database: ArtemiaDb, scope: Scope, measurement
     quality_reasons: measurement.quality_reasons,
     context: measurement.context,
     note: measurement.note,
-    device_metadata: measurement.instrument ? { instrument: measurement.instrument } : null,
+    device_metadata: Object.keys(metadata).length ? metadata : null,
     algorithm_version: null,
     attempt_id: null,
     device_id: measurement.device_id,

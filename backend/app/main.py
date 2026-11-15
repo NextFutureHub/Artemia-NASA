@@ -96,6 +96,7 @@ def me(account: Account = Depends(current_user), session: Session = Depends(get_
         "callsign": profile.callsign,
         "locale": profile.locale,
         "timezone": profile.timezone,
+        "unit_system": getattr(profile, "unit_system", None) or "metric",
         "role": None if membership is None else membership.role,
         "mission_id": None if membership is None else str(membership.mission_id),
     }

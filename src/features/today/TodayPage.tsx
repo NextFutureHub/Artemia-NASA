@@ -11,6 +11,7 @@ import { db } from '../../data/local/db.ts'
 import { hiddenObservationIds, hideObservation, listCheckins, listMeasurements, listReports, readActiveDraft, readRevisions } from '../../data/local/journal.ts'
 import { environmentId } from '../../data/remote/client.ts'
 import { careKindLabel, careStatusLabel } from '../../domain/labels.ts'
+import { displayUnitLabel, formatStoredMeasurement, metricDisplayUnit } from '../../domain/unitSystem.ts'
 import { t } from '../../i18n/copy.ts'
 import type { DraftRecord, LocalCareOrder, LocalCheckin, LocalMeasurement, LocalMessage, LocalReport } from '../../data/local/types.ts'
 
@@ -132,7 +133,8 @@ export function TodayPage() {
           <div className="numeric">
             <p>
               {stale ? `${t(locale, 'ago', { time: elapsed(locale, latest.recorded_at) })} · ` : null}
-              {metricLabel(locale, latest.metric)} {latest.value ?? '—'} {latest.unit}
+              {metricLabel(locale, latest.metric)} {formatStoredMeasurement(latest.metric, latest.value, session.unitSystem) || '—'}{' '}
+              {displayUnitLabel(locale, metricDisplayUnit(latest.metric, session.unitSystem))}
             </p>
             <p className="mt-1 text-sm text-muted">
               {sourceLabel(locale, latest.source)} · {qualityLabel(locale, latest.quality)} · {stale ? t(locale, 'measurementStale') : t(locale, 'measurementCurrent')}

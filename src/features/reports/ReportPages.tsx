@@ -23,8 +23,15 @@ import { localDateInZone } from '../../domain/clock.ts'
 import type { ReportReason } from '../../domain/enums.ts'
 import { metricLabel, qualityLabel, sourceLabel } from '../../domain/labels.ts'
 import { buildReportSnapshot, mergeReportStatus, reportReasonLabel } from '../../domain/reportSnapshot.ts'
+import { displayUnitLabel, formatStoredMeasurement, metricDisplayUnit, type UnitSystem } from '../../domain/unitSystem.ts'
 import { label, t } from '../../i18n/copy.ts'
 import type { LocalCheckin, LocalMeasurement, LocalMessage, LocalPersonalRevision, LocalReport, LocalRevision } from '../../data/local/types.ts'
+import type { Metric } from '../../domain/enums.ts'
+
+function formatMeasurementLine(locale: 'ru' | 'en', metric: Metric, value: number | null, system: UnitSystem): string {
+  const shown = formatStoredMeasurement(metric, value, system)
+  return `${shown || '—'} ${displayUnitLabel(locale, metricDisplayUnit(metric, system))}`
+}
 
 export function ReportsPage() {
   const session = useSession()
@@ -148,8 +155,9 @@ export function ReportEditorPage() {
       message: message.trim() === '' ? null : message.trim(),
       recipientAssignmentId: session.assignment.assignment_id,
       locale,
+      unitSystem: session.unitSystem,
     }).snapshot
-  }, [chosenRevisions, chosenMeasurements, reviewRequested, preparedAt, message, session.assignment?.assignment_id, locale])
+  }, [chosenRevisions, chosenMeasurements, reviewRequested, preparedAt, message, session.assignment?.assignment_id, locale, session.unitSystem])
 
   if (!profile) return null
   const owner = profile
@@ -251,7 +259,7 @@ export function ReportEditorPage() {
               onChange={(event) => setSelectedMeasurements((current) => event.target.checked ? [...current, row.id] : current.filter((id) => id !== row.id))}
             />
             <span>
-              {metricLabel(locale, row.metric)} · {row.value ?? '—'} · {qualityLabel(locale, row.quality)} · {sourceLabel(locale, row.source)}
+              {metricLabel(locale, row.metric)} · {formatMeasurementLine(locale, row.metric, row.value, session.unitSystem)} · {qualityLabel(locale, row.quality)} · {sourceLabel(locale, row.source)}
             </span>
           </label>
         ))}
@@ -285,7 +293,13 @@ export function ReportEditorPage() {
               {snapshot.revision_ids.map((id) => (
                 <li key={id} className="numeric text-sm">{id}</li>
               ))}
+              {snapshot.measurements.map((row) => (
+                <li key={row.measurement_id} className="text-sm">
+                  {metricLabel(locale, row.metric)} · {formatMeasurementLine(locale, row.metric, row.value, snapshot.unit_system)}
+                </li>
+              ))}
             </ul>
+            <p className="text-sm text-muted">{t(locale, 'unitsSetting')}: {snapshot.unit_system === 'us' ? t(locale, 'unitsUs') : t(locale, 'unitsEu')}</p>
             <p>{includePersonal && personalPart ? t(locale, 'personalIncluded') : t(locale, 'personalExcluded')}</p>
           </>
         ) : (

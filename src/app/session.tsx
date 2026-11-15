@@ -4,6 +4,7 @@ import { countPending, readAssignment, readMission, readPreparedProfile, updateP
 import { apiRequest, environmentId } from '../data/remote/client.ts'
 import type { AssignmentCache, MissionCache, PreparedProfile } from '../data/local/types.ts'
 import type { Locale } from '../i18n/copy.ts'
+import { normalizeUnitSystem, type UnitSystem } from '../domain/unitSystem.ts'
 
 export type ConnectionState = 'checking' | 'online' | 'offline' | 'auth_required'
 
@@ -11,6 +12,8 @@ type SessionValue = {
   ready: boolean
   locale: Locale
   setLocale: (locale: Locale) => void
+  unitSystem: UnitSystem
+  setUnitSystem: (system: UnitSystem) => Promise<void>
   token: string | null
   userId: string | null
   role: 'astronaut' | 'doctor' | null
@@ -34,6 +37,7 @@ const SessionContext = createContext<SessionValue | null>(null)
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false)
   const [locale, setLocaleState] = useState<Locale>('ru')
+  const [unitSystem, setUnitSystemState] = useState<UnitSystem>('metric')
   const [token, setToken] = useState<string | null>(() => sessionStorage.getItem('artemia.token'))
   const [userId, setUserId] = useState<string | null>(() => sessionStorage.getItem('artemia.userId'))
   const [role, setRole] = useState<'astronaut' | 'doctor' | null>(() => readRole())
@@ -52,6 +56,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setProfile(next)
     if (next) {
       setLocaleState(next.locale)
+      setUnitSystemState(normalizeUnitSystem(next.unit_system))
       const scope = { ownerId: next.owner_id, environmentId }
       setMission(await readMission(db, scope, next.mission_id))
       setAssignment(await readAssignment(db, scope))
@@ -60,6 +65,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setMission(null)
       setAssignment(null)
       setPending(0)
+      const storedUser = sessionStorage.getItem('artemia.userId')
+      if (storedUser) setUnitSystemState(readDoctorUnitSystem(storedUser))
     }
     return next
   }
@@ -123,6 +130,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     void updateProfile(db, updated)
   }
 
+  async function setUnitSystem(next: UnitSystem) {
+    setUnitSystemState(next)
+    if (profile) {
+      const updated = { ...profile, unit_system: next }
+      setProfile(updated)
+      await updateProfile(db, updated)
+      return
+    }
+    const currentUser = sessionStorage.getItem('artemia.userId')
+    if (currentUser) writeDoctorUnitSystem(currentUser, next)
+  }
+
   async function login(email: string, password: string): Promise<{ kind: 'astronaut' | 'doctor'; userId: string } | { kind: 'denied' | 'network' }> {
     const result = await apiRequest('/auth/login', { method: 'POST', body: { email: email.trim(), password } })
     if (result.status === 0) return { kind: 'network' }
@@ -142,7 +161,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setToken(nextToken)
     setUserId(me.body.id)
     if (!profile && (me.body.locale === 'ru' || me.body.locale === 'en')) setLocaleState(me.body.locale)
-    if (me.body.role === 'doctor') return { kind: 'doctor', userId: me.body.id }
+    if (me.body.role === 'doctor') {
+      // Doctor preference is local to the device; seed from server only when unset.
+      const stored = localStorage.getItem(doctorUnitKey(me.body.id))
+      const nextSystem = stored ? normalizeUnitSystem(stored) : normalizeUnitSystem(me.body.unit_system)
+      writeDoctorUnitSystem(me.body.id, nextSystem)
+      setUnitSystemState(nextSystem)
+      return { kind: 'doctor', userId: me.body.id }
+    }
     if (me.body.role === 'astronaut') return { kind: 'astronaut', userId: me.body.id }
     return { kind: 'denied' }
   }
@@ -160,6 +186,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     ready,
     locale,
     setLocale,
+    unitSystem,
+    setUnitSystem,
     token,
     userId,
     role,
@@ -189,6 +217,18 @@ export function useSession(): SessionValue {
 function readRole(): 'astronaut' | 'doctor' | null {
   const stored = sessionStorage.getItem('artemia.role')
   return stored === 'doctor' || stored === 'astronaut' ? stored : null
+}
+
+function doctorUnitKey(userId: string): string {
+  return `artemia.unitSystem.${userId}`
+}
+
+function readDoctorUnitSystem(userId: string): UnitSystem {
+  return normalizeUnitSystem(localStorage.getItem(doctorUnitKey(userId)))
+}
+
+function writeDoctorUnitSystem(userId: string, system: UnitSystem): void {
+  localStorage.setItem(doctorUnitKey(userId), system)
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

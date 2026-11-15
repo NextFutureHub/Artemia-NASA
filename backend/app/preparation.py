@@ -51,6 +51,7 @@ def preparation_bundle(session: Session, user_id: UUID) -> dict[str, object] | N
             "callsign": profile.callsign,
             "locale": profile.locale,
             "timezone": profile.timezone,
+            "unit_system": getattr(profile, "unit_system", None) or "metric",
         },
         "mission": {
             "id": str(mission.id),

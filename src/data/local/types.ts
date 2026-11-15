@@ -36,6 +36,7 @@ export type PreparedProfile = {
   reproductive_enabled: boolean
   sensitive_sharing: 'device_only' | 'assigned_doctor'
   general_exchange: boolean
+  unit_system: 'metric' | 'us'
   age: number | null
   sex_context: 'female' | 'male' | 'intersex' | 'unspecified' | null
   device_id: string
@@ -155,6 +156,9 @@ export type LocalMeasurement = {
   metric: Metric
   value: number | null
   unit: 'bpm' | 'celsius' | 'percent'
+  /** Original typed value before conversion to base units. */
+  input_value: number | null
+  input_unit: 'bpm' | 'celsius' | 'fahrenheit' | 'percent' | null
   source: MeasurementSource
   quality: MeasurementQuality
   quality_reasons: string[]

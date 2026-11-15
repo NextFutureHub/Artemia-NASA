@@ -4,8 +4,9 @@ import { useSession } from '../../app/session.tsx'
 import { Banner, Button, Field } from '../../components/ui.tsx'
 import { apiRequest } from '../../data/remote/client.ts'
 import { CARE_ORDER_KINDS } from '../../domain/enums.ts'
-import { careKindLabel, careStatusLabel } from '../../domain/labels.ts'
+import { careKindLabel, careStatusLabel, metricLabel } from '../../domain/labels.ts'
 import { nextMemorySlice, type MemorySlice, type SliceLoad } from '../../domain/reportSnapshot.ts'
+import { displayUnitLabel, formatStoredMeasurement, metricDisplayUnit } from '../../domain/unitSystem.ts'
 import { t } from '../../i18n/copy.ts'
 
 type InboxItem = {
@@ -34,7 +35,13 @@ type ReportCard = {
   callsign: string
   display_name: string
   title: string
-  general_snapshot: { summary?: string; revision_ids?: string[]; prepared_at?: string }
+  general_snapshot: {
+    summary?: string
+    revision_ids?: string[]
+    prepared_at?: string
+    unit_system?: 'metric' | 'us'
+    measurements?: Array<{ measurement_id: string; metric: string; value: number | null; unit: string }>
+  }
   general_hash: string
   integrity: string
   received_at: string
@@ -49,14 +56,38 @@ export function GroundShell() {
   if (!session.token || session.role !== 'doctor') return <Navigate to="/login" replace />
   return (
     <div className="min-h-screen">
-      <header className="flex h-16 items-center justify-between gap-3 border-b border-line px-4">
+      <header className="flex h-16 flex-wrap items-center justify-between gap-3 border-b border-line px-4">
         <div>
           <p className="text-sm text-attention">{t(session.locale, 'demo')}</p>
           <p>{t(session.locale, 'groundTitle')}</p>
         </div>
-        <button type="button" className="min-h-11" onClick={() => { session.logout(); window.location.assign('/login') }}>
-          {t(session.locale, 'logout')}
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <fieldset className="flex items-center gap-2 text-sm">
+            <legend className="sr-only">{t(session.locale, 'unitsSetting')}</legend>
+            <span className="text-muted">{t(session.locale, 'unitsSetting')}</span>
+            <label className="flex min-h-11 items-center gap-1">
+              <input
+                type="radio"
+                name="doctor-units"
+                checked={session.unitSystem === 'metric'}
+                onChange={() => void session.setUnitSystem('metric')}
+              />
+              EU
+            </label>
+            <label className="flex min-h-11 items-center gap-1">
+              <input
+                type="radio"
+                name="doctor-units"
+                checked={session.unitSystem === 'us'}
+                onChange={() => void session.setUnitSystem('us')}
+              />
+              US
+            </label>
+          </fieldset>
+          <button type="button" className="min-h-11" onClick={() => { session.logout(); window.location.assign('/login') }}>
+            {t(session.locale, 'logout')}
+          </button>
+        </div>
       </header>
       <div className="mx-auto max-w-5xl p-4">
         <p className="mb-4 text-sm text-muted">{t(session.locale, 'groundBody')}</p>
@@ -254,6 +285,23 @@ export function GroundReportPage() {
             <p className="numeric text-sm text-muted">{card.general_hash}</p>
             <p>{card.received_at} · {card.doctor_work}</p>
             <p>{card.general_snapshot.summary}</p>
+            {(card.general_snapshot.measurements ?? []).length > 0 ? (
+              <ul className="mt-2">
+                {(card.general_snapshot.measurements ?? []).map((row) => {
+                  const frozen = card.general_snapshot.unit_system === 'us' ? 'us' : 'metric'
+                  const metric = row.metric === 'temperature' || row.metric === 'spo2' || row.metric === 'heart_rate' ? row.metric : 'heart_rate'
+                  return (
+                    <li key={row.measurement_id} className="text-sm">
+                      {metricLabel(locale, metric)} · {formatStoredMeasurement(metric, row.value, frozen) || '—'}{' '}
+                      {displayUnitLabel(locale, metricDisplayUnit(metric, frozen))}
+                    </li>
+                  )
+                })}
+              </ul>
+            ) : null}
+            <p className="text-sm text-muted">
+              {t(locale, 'unitsSetting')}: {(card.general_snapshot.unit_system ?? 'metric') === 'us' ? t(locale, 'unitsUs') : t(locale, 'unitsEu')}
+            </p>
             <ul>
               {(card.events ?? []).map((event) => (
                 <li key={`${event.event_type}-${event.server_at}`}>{event.event_type} · {event.server_at}</li>

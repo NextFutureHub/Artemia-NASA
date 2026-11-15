@@ -136,6 +136,7 @@ test('preview snapshot is the stored report and acceptance does not open it', as
     message: null,
     recipientAssignmentId: ASSIGNMENT,
     locale: 'ru',
+    unitSystem: 'metric',
   }).snapshot
   assert.ok(preview)
   const reportId = crypto.randomUUID()
@@ -247,6 +248,7 @@ async function seeded(): Promise<ArtemiaDb> {
     mission_id: MISSION,
     role: 'astronaut',
     locale: 'ru',
+    unitSystem: 'metric',
     timezone: 'UTC',
     reminder_time: null,
     reminder_enabled: false,
@@ -254,6 +256,7 @@ async function seeded(): Promise<ArtemiaDb> {
     reproductive_enabled: true,
     sensitive_sharing: 'device_only',
     general_exchange: true,
+    unit_system: 'metric',
     age: null,
     sex_context: null,
     device_id: 'web.device-1',

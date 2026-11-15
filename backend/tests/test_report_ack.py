@@ -15,6 +15,7 @@ def _snapshot(revision_ids: list[str]) -> dict:
         "message": None,
         "recipient_assignment_id": str(ASSIGNMENT_MIRA),
         "summary": "За период заполнено 1 записей. Запрос просмотра: нет. Прикреплено 0 измерений, из них 0 с неизвестным качеством.",
+        "unit_system": "metric",
     }
 
 
