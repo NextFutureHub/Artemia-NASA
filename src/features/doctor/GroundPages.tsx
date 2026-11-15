@@ -84,6 +84,24 @@ export function GroundShell() {
               US
             </label>
           </fieldset>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              aria-pressed={session.locale === 'ru'}
+              className={`min-h-11 rounded-xl border px-3 ${session.locale === 'ru' ? 'border-accent' : 'border-line'}`}
+              onClick={() => session.setLocale('ru')}
+            >
+              RU
+            </button>
+            <button
+              type="button"
+              aria-pressed={session.locale === 'en'}
+              className={`min-h-11 rounded-xl border px-3 ${session.locale === 'en' ? 'border-accent' : 'border-line'}`}
+              onClick={() => session.setLocale('en')}
+            >
+              EN
+            </button>
+          </div>
           <button type="button" className="min-h-11" onClick={() => { session.logout(); window.location.assign('/login') }}>
             {t(session.locale, 'logout')}
           </button>

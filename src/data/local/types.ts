@@ -173,6 +173,9 @@ export type LocalMeasurement = {
   schema_version: 1
   delivery: LocalDelivery
   payload_hash: string
+  algorithm_version?: string | null
+  attempt_id?: string | null
+  device_metadata?: Record<string, unknown> | null
 }
 
 export type LocalLink = {

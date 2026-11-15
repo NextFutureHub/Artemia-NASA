@@ -379,7 +379,22 @@ export async function commitMeasurement(
 ): Promise<CommitStatus> {
   const savedAt = new Date().toISOString()
   const parsed = measurementOperationSchema.safeParse(operationPayload)
-  if (!parsed.success || parsed.data.source !== 'manual' || parsed.data.quality !== 'unknown') {
+  if (!parsed.success) {
+    return { status: 'rejected', reason: 'invalid_measurement' }
+  }
+  if (parsed.data.source === 'manual' && parsed.data.quality !== 'unknown') {
+    return { status: 'rejected', reason: 'invalid_measurement' }
+  }
+  if (parsed.data.source === 'simulated') {
+    return { status: 'rejected', reason: 'invalid_measurement' }
+  }
+  if (
+    parsed.data.source === 'usb' &&
+    parsed.data.quality !== 'valid' &&
+    parsed.data.quality !== 'invalid' &&
+    parsed.data.quality !== 'insufficient' &&
+    parsed.data.quality !== 'unknown'
+  ) {
     return { status: 'rejected', reason: 'invalid_measurement' }
   }
   const payloadHash = await hashOperation({
@@ -1066,20 +1081,24 @@ async function enqueueMeasurement(database: ArtemiaDb, scope: Scope, measurement
     metadata.input_value = measurement.input_value
     metadata.input_unit = measurement.input_unit
   }
+  const mergedMeta = {
+    ...(measurement.device_metadata ?? {}),
+    ...metadata,
+  }
   const payload = measurementOperationSchema.parse({
     id: measurement.id,
     mission_id: measurement.mission_id,
     metric: measurement.metric,
     value: measurement.value,
     unit: measurement.unit,
-    source: 'manual',
-    quality: 'unknown',
+    source: measurement.source,
+    quality: measurement.quality,
     quality_reasons: measurement.quality_reasons,
     context: measurement.context,
     note: measurement.note,
-    device_metadata: Object.keys(metadata).length ? metadata : null,
-    algorithm_version: null,
-    attempt_id: null,
+    device_metadata: Object.keys(mergedMeta).length ? mergedMeta : null,
+    algorithm_version: measurement.algorithm_version ?? null,
+    attempt_id: measurement.attempt_id ?? null,
     device_id: measurement.device_id,
     recorded_at: measurement.recorded_at,
     created_at_device: measurement.created_at_device,

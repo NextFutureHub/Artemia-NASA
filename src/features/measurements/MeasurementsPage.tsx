@@ -18,6 +18,8 @@ import { commitMeasurement, listMeasurements } from '../../data/local/journal.ts
 import { environmentId } from '../../data/remote/client.ts'
 import { issueText, t } from '../../i18n/copy.ts'
 import type { LocalMeasurement } from '../../data/local/types.ts'
+import { webSerialSupported } from '../../device/webSerial.ts'
+import { UsbMeasurementPanel } from './UsbMeasurementPanel.tsx'
 
 export function MeasurementsPage() {
   const session = useSession()
@@ -25,6 +27,7 @@ export function MeasurementsPage() {
   const profile = session.profile
   const unitSystem = session.unitSystem
   const [tab, setTab] = useState<'new' | 'history'>('new')
+  const [method, setMethod] = useState<'manual' | 'usb'>('manual')
   const [rows, setRows] = useState<LocalMeasurement[]>([])
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -47,7 +50,7 @@ export function MeasurementsPage() {
   }, [profile?.owner_id, session.pending])
 
   if (!profile) return null
-  const serial = 'serial' in navigator
+  const serial = webSerialSupported()
   const values = form.watch()
 
   async function onUnitSystemChange(next: UnitSystem) {
@@ -157,14 +160,22 @@ export function MeasurementsPage() {
         </Button>
       </div>
       <section className="grid gap-3 md:grid-cols-3">
-        <article className="rounded-xl border border-accent p-3">
+        <button
+          type="button"
+          className={`rounded-xl border p-3 text-left ${method === 'manual' ? 'border-accent' : 'border-line'}`}
+          onClick={() => setMethod('manual')}
+        >
           <h2>{t(locale, 'manual')}</h2>
           <p className="text-sm text-muted">{t(locale, 'unknownQuality')}</p>
-        </article>
-        <article className="rounded-xl border border-line p-3">
-          <h2>USB</h2>
-          <p className="text-sm">{serial ? t(locale, 'usbLater') : t(locale, 'usbMissing')}</p>
-        </article>
+        </button>
+        <button
+          type="button"
+          className={`rounded-xl border p-3 text-left ${method === 'usb' ? 'border-accent' : 'border-line'}`}
+          onClick={() => setMethod('usb')}
+        >
+          <h2>{t(locale, 'usbSensor')}</h2>
+          <p className="text-sm text-muted">{serial ? t(locale, 'usbWiredHint') : t(locale, 'usbMissing')}</p>
+        </button>
         {environmentId === 'demo' ? (
           <article className="rounded-xl border border-dashed border-attention p-3">
             <h2>{t(locale, 'simulation')}</h2>
@@ -172,7 +183,9 @@ export function MeasurementsPage() {
           </article>
         ) : null}
       </section>
-      {tab === 'new' ? (
+      {tab === 'new' && method === 'usb' ? (
+        <UsbMeasurementPanel onSaved={setRows} />
+      ) : tab === 'new' ? (
         <form
           className="flex max-w-xl flex-col gap-3"
           onSubmit={(event) => {
