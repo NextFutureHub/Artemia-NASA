@@ -67,7 +67,7 @@ export function Banner({ tone, children }: { tone: 'attention' | 'danger' | 'neu
     danger: 'border-danger text-danger',
     neutral: 'border-line text-muted',
   }
-  return <p className={`rounded-xl border px-4 py-3 text-sm ${styles[tone]}`}>{children}</p>
+  return <div role="status" className={`rounded-xl border px-4 py-3 text-sm ${styles[tone]}`}>{children}</div>
 }
 
 export function AppDialog({

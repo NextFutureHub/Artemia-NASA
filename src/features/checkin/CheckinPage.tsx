@@ -4,11 +4,13 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useSession } from '../../app/session.tsx'
 import { ChoiceButtons } from '../../components/Choices.tsx'
 import { OptionalGate, ReviewLine, StepRail } from '../../components/FormChrome.tsx'
+import { DateTimePicker } from '../../components/DateTimePicker.tsx'
 import { AppDialog, Banner, Button, Field } from '../../components/ui.tsx'
 import { dateToZonedInput, formatUtcHm, formatZoned, localDateInZone, missionDay, zonedInputToDate } from '../../domain/clock.ts'
 import {
   buildGeneralPayload,
   checkinSteps,
+  defaultReportPeriod,
   emptyCheckinDraft,
   emptySymptom,
   isFilledLater,
@@ -18,9 +20,11 @@ import {
   type CheckinStep,
   type SymptomDraft,
 } from '../../domain/checkinDraft.ts'
+import { buildCareOrderResponse } from '../../domain/careOrder.ts'
 import { buildPersonalPayload } from '../../domain/personalDraft.ts'
-import type { SharingMode, SymptomCode } from '../../domain/enums.ts'
+import type { CareOrderDecision, SharingMode, SymptomCode } from '../../domain/enums.ts'
 import { db } from '../../data/local/db.ts'
+import { commitCareOrderResponse, listCareOrders } from '../../data/local/careOrders.ts'
 import {
   commitCheckin,
   deleteDraft,
@@ -45,7 +49,7 @@ import {
   symptomLabels,
   t,
 } from '../../i18n/copy.ts'
-import type { DraftRecord, LocalDelivery, LocalMeasurement } from '../../data/local/types.ts'
+import type { DraftRecord, LocalCareOrder, LocalDelivery, LocalMeasurement } from '../../data/local/types.ts'
 import { PersonalStep } from './PersonalStep.tsx'
 import { SleepIntervalsPanel } from './SleepIntervalsPanel.tsx'
 import { sumSleptIntervalHours, type SleepInterval } from '../../domain/sleepIntervals.ts'
@@ -77,6 +81,9 @@ export function CheckinPage() {
   const [sectionEnabled, setSectionEnabled] = useState(profile?.reproductive_enabled ?? false)
   const [sectionSharing, setSectionSharing] = useState<SharingMode>(profile?.sensitive_sharing ?? 'device_only')
   const [measureChoice, setMeasureChoice] = useState<'fill' | 'skip' | null>(null)
+  const [careOrders, setCareOrders] = useState<LocalCareOrder[]>([])
+  const [careBusyId, setCareBusyId] = useState<string | null>(null)
+  const [careMessage, setCareMessage] = useState('')
   const stepRef = useRef(step)
   stepRef.current = step
   const draftRef = useRef(draft)
@@ -121,10 +128,13 @@ export function CheckinPage() {
     void listMeasurements(db, scope).then((rows) => {
       if (!cancelled) setMeasurements(rows)
     })
+    void listCareOrders(db, scope).then((rows) => {
+      if (!cancelled) setCareOrders(rows)
+    })
     return () => {
       cancelled = true
     }
-  }, [profile?.owner_id])
+  }, [profile?.owner_id, session.pending])
 
   useEffect(() => {
     if (!draft) return
@@ -180,6 +190,41 @@ export function CheckinPage() {
     const current = draftRef.current
     if (!current) return
     void saveDraft(db, { ...current, values: form.getValues(), step: next }).then(setSavedAt)
+  }
+
+  async function respondPersonalCare(order: LocalCareOrder, decision: CareOrderDecision, note: string) {
+    if (careBusyId || !profile) return
+    setCareBusyId(order.id)
+    setCareMessage('')
+    const now = new Date().toISOString()
+    const built = buildCareOrderResponse({
+      id: crypto.randomUUID(),
+      orderId: order.id,
+      missionId: order.mission_id,
+      decision,
+      note: decision === 'acknowledged' ? null : note.trim() || null,
+      linkNote: null,
+      recordedAt: now,
+      createdAtDevice: now,
+    })
+    if (!built.payload) {
+      setCareMessage(t(locale, 'errors'))
+      setCareBusyId(null)
+      return
+    }
+    const result = await commitCareOrderResponse(
+      db,
+      { ownerId: profile.owner_id, environmentId },
+      order,
+      built.payload,
+      crypto.randomUUID(),
+    )
+    if (result.status === 'committed') {
+      setCareMessage(t(locale, 'careResponseSaved'))
+      setCareOrders(await listCareOrders(db, { ownerId: profile.owner_id, environmentId }))
+      await session.refreshLocal()
+    }
+    setCareBusyId(null)
   }
 
   async function onSave() {
@@ -392,7 +437,13 @@ export function CheckinPage() {
             hint={`${t(locale, 'observationUtcHint')}${recorded ? ` · ${formatUtcHm(recorded)}` : ''}`}
             error={errorFor('recordedAtLocal')}
           >
-            <input id="recordedAtLocal" type="datetime-local" className="min-h-11 rounded-xl border border-line bg-canvas px-3" {...form.register('recordedAtLocal')} />
+            <DateTimePicker
+              id="recordedAtLocal"
+              value={values.recordedAtLocal}
+              onChange={(next) => form.setValue('recordedAtLocal', next, { shouldDirty: true })}
+              locale={locale}
+              timeZone={timeZone}
+            />
           </Field>
           {later ? <p className="text-sm text-muted">{t(locale, 'filledLater')}</p> : null}
 
@@ -491,11 +542,36 @@ export function CheckinPage() {
                 <p className="mt-1 text-sm text-muted">{t(locale, 'nutritionPeriodLead')}</p>
                 <div className="mt-3 flex flex-col gap-3">
                   <Field id="nutritionPeriodStartLocal" label={t(locale, 'nutritionPeriodStart')} error={errorFor('nutritionPeriodStartLocal')} hint={t(locale, 'nutritionPeriodDefault')}>
-                    <input id="nutritionPeriodStartLocal" type="datetime-local" className="min-h-11 rounded-xl border border-line bg-canvas px-3" {...form.register('nutritionPeriodStartLocal')} />
+                    <DateTimePicker
+                      id="nutritionPeriodStartLocal"
+                      value={values.nutritionPeriodStartLocal}
+                      onChange={(next) => form.setValue('nutritionPeriodStartLocal', next, { shouldDirty: true })}
+                      locale={locale}
+                      timeZone={timeZone}
+                    />
                   </Field>
                   <Field id="nutritionPeriodEndLocal" label={t(locale, 'nutritionPeriodEnd')} error={errorFor('nutritionPeriodEndLocal')}>
-                    <input id="nutritionPeriodEndLocal" type="datetime-local" className="min-h-11 rounded-xl border border-line bg-canvas px-3" {...form.register('nutritionPeriodEndLocal')} />
+                    <DateTimePicker
+                      id="nutritionPeriodEndLocal"
+                      value={values.nutritionPeriodEndLocal}
+                      onChange={(next) => form.setValue('nutritionPeriodEndLocal', next, { shouldDirty: true })}
+                      locale={locale}
+                      timeZone={timeZone}
+                    />
                   </Field>
+                  <Button
+                    type="button"
+                    variant="quiet"
+                    onClick={() => {
+                      const observed = zonedInputToDate(form.getValues().recordedAtLocal, timeZone) ?? new Date()
+                      const period = defaultReportPeriod(observed)
+                      form.setValue('nutritionPeriodStartLocal', dateToZonedInput(new Date(period.start_at), timeZone), { shouldDirty: true })
+                      form.setValue('nutritionPeriodEndLocal', dateToZonedInput(new Date(period.end_at), timeZone), { shouldDirty: true })
+                      setIssues((current) => current.filter((issue) => issue.path !== 'nutritionPeriodStartLocal' && issue.path !== 'nutritionPeriodEndLocal'))
+                    }}
+                  >
+                    {t(locale, 'nutritionPeriodApplyDefault')}
+                  </Button>
                 </div>
                 {(values.nutritionPeriodStartLocal.trim() !== '' || values.nutritionPeriodEndLocal.trim() !== '') ? (
                   <p className="mt-2 text-sm text-muted">{t(locale, 'nutritionHistoryOverlapHint')}</p>
@@ -647,11 +723,21 @@ export function CheckinPage() {
       ) : null}
 
       {step === 'personal' ? (
-        <PersonalStep form={form} values={values} locale={locale} errorFor={errorFor} onConfigure={() => {
-          setSectionEnabled(personalEnabled)
-          setSectionSharing(profile.sensitive_sharing)
-          setSettingsOpen(true)
-        }} />
+        <PersonalStep
+          form={form}
+          values={values}
+          locale={locale}
+          errorFor={errorFor}
+          careOrders={careOrders}
+          careBusyId={careBusyId}
+          careMessage={careMessage}
+          onCareRespond={(order, decision, note) => void respondPersonalCare(order, decision, note)}
+          onConfigure={() => {
+            setSectionEnabled(personalEnabled)
+            setSectionSharing(profile.sensitive_sharing)
+            setSettingsOpen(true)
+          }}
+        />
       ) : null}
 
       {step === 'measurements' ? (

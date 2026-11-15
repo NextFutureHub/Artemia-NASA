@@ -1,4 +1,5 @@
 import { ChoiceButtons } from '../../components/Choices.tsx'
+import { DateTimePicker } from '../../components/DateTimePicker.tsx'
 import { Banner, Button, Field } from '../../components/ui.tsx'
 import type { SleepIntervalDraft } from '../../domain/checkinDraft.ts'
 import { zonedInputToDate } from '../../domain/clock.ts'
@@ -91,21 +92,21 @@ export function SleepIntervalsPanel({
                   </Button>
                 </div>
                 <Field id={`sleep-start-${index}`} label={t(locale, 'sleepIntervalStart')}>
-                  <input
+                  <DateTimePicker
                     id={`sleep-start-${index}`}
-                    type="datetime-local"
-                    className="min-h-11 rounded-xl border border-line bg-canvas px-3"
                     value={item.startLocal}
-                    onChange={(event) => update(index, { startLocal: event.target.value })}
+                    onChange={(next) => update(index, { startLocal: next })}
+                    locale={locale}
+                    timeZone={timeZone}
                   />
                 </Field>
                 <Field id={`sleep-end-${index}`} label={t(locale, 'sleepIntervalEnd')} hint={t(locale, 'sleepAcrossMidnightHint')}>
-                  <input
+                  <DateTimePicker
                     id={`sleep-end-${index}`}
-                    type="datetime-local"
-                    className="min-h-11 rounded-xl border border-line bg-canvas px-3"
                     value={item.endLocal}
-                    onChange={(event) => update(index, { endLocal: event.target.value })}
+                    onChange={(next) => update(index, { endLocal: next })}
+                    locale={locale}
+                    timeZone={timeZone}
                   />
                 </Field>
                 <ChoiceButtons

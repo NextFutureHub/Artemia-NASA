@@ -434,7 +434,7 @@ function nutritionIssues(values: CheckinDraftValues, timeZone: string, now: Date
   } else if (start.getTime() >= end.getTime()) {
     issues.push({ path: 'nutritionPeriodEndLocal', message: 'period_order' })
   } else if (end.getTime() > recorded.getTime() + FUTURE_LIMIT_MS) {
-    issues.push({ path: 'nutritionPeriodEndLocal', message: 'future_limit' })
+    issues.push({ path: 'nutritionPeriodEndLocal', message: 'period_after_observation' })
   }
   return issues
 }

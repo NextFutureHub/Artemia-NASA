@@ -348,6 +348,7 @@ export const copy = {
   nutritionPeriodStart: { ru: 'Начало периода', en: 'Period start' },
   nutritionPeriodEnd: { ru: 'Конец периода', en: 'Period end' },
   nutritionPeriodDefault: { ru: 'Как у самоотчёта (24 ч)', en: 'Same as check-in (24 h)' },
+  nutritionPeriodApplyDefault: { ru: 'Подставить 24 ч самоотчёта', en: 'Use check-in 24 h' },
   nutritionHistoryOverlapHint: {
     ru: 'Пересекающиеся периоды питания не складываются как отдельные суточные объёмы жидкости.',
     en: 'Overlapping nutrition periods are not added as separate daily fluid totals.',
@@ -497,6 +498,13 @@ export const copy = {
   openMedicalContact: { ru: 'Открыть медицинское обращение', en: 'Open medical contact' },
   autoSaveDraft: { ru: 'Автоматическое сохранение черновика', en: 'Automatic draft saving' },
   observationUtcHint: { ru: 'Основное время миссии — UTC', en: 'Mission time is UTC' },
+  pickDateTime: { ru: 'Выберите дату и время', en: 'Pick date and time' },
+  prevMonth: { ru: 'Предыдущий месяц', en: 'Previous month' },
+  nextMonth: { ru: 'Следующий месяц', en: 'Next month' },
+  hour: { ru: 'Часы', en: 'Hour' },
+  minute: { ru: 'Минуты', en: 'Minute' },
+  useNow: { ru: 'Сейчас', en: 'Now' },
+  done: { ru: 'Готово', en: 'Done' },
   emotional: { ru: 'Эмоциональное состояние', en: 'Emotional state' },
   context: { ru: 'Контекст', en: 'Context' },
   comment: { ru: 'Комментарий', en: 'Comment' },
@@ -560,6 +568,16 @@ export const copy = {
   doNotRate: { ru: 'Не оценивать', en: 'Do not rate' },
   cycleContext: { ru: 'Контекст цикла', en: 'Cycle context' },
   adherence: { ru: 'Следование ранее назначенной схеме', en: 'Following a previously prescribed regimen' },
+  adherenceHint: {
+    ru: 'Самоотчёт о согласованной схеме. Это не ввод лекарства, дозы или компенсации пропуска.',
+    en: 'A self-report about an agreed regimen. This is not a medication, dose, or missed-dose entry.',
+  },
+  personalCarePlan: { ru: 'План наблюдения врача', en: 'Physician observation plan' },
+  personalCarePlanLead: {
+    ru: 'Персональные задачи наблюдения. Это не лекарственные назначения и не диагноз.',
+    en: 'Personal observation tasks. These are not medication prescriptions and not a diagnosis.',
+  },
+  personalCareEmpty: { ru: 'Активных персональных задач врача нет', en: 'No active personal physician tasks' },
   discussDoctor: { ru: 'Хочу обсудить с врачом', en: 'I want to discuss this with the physician' },
   personalComment: { ru: 'Комментарий для себя или врача', en: 'Comment for yourself or the physician' },
   sectionAccess: { ru: 'Доступ к этому разделу', en: 'Access to this section' },
@@ -958,6 +976,11 @@ export function issueText(locale: Locale, message: string): string {
   }
   if (message === 'period_order') {
     return locale === 'ru' ? 'Начало периода должно быть раньше конца.' : 'Period start must be before the end.'
+  }
+  if (message === 'period_after_observation') {
+    return locale === 'ru'
+      ? 'Конец периода не позже времени наблюдения (допуск 5 минут).'
+      : 'Period end cannot be after the observation time (5-minute tolerance).'
   }
   if (message === 'skip_must_clear_exertion' || message === 'skipped_omits_exertion') {
     return locale === 'ru' ? 'При пропуске тяжесть занятия не указывается.' : 'Exertion is not recorded when the session is skipped.'

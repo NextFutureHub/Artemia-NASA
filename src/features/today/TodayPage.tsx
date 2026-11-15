@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useSession } from '../../app/session.tsx'
 import { PageIntro } from '../../components/FormChrome.tsx'
 import { AppDialog, Button, Card } from '../../components/ui.tsx'
+import { isPersonalCareTask } from '../../domain/careTaskPrivacy.ts'
 import { formatZoned, localDateInZone } from '../../domain/clock.ts'
 import { explanationCard, type RuleId } from '../../domain/explanations.ts'
 import type { GeneralPayload } from '../../domain/generalPayload.ts'
@@ -322,9 +323,6 @@ export function TodayPage() {
   )
 }
 
-function isPersonalCareTask(order: LocalCareOrder): boolean {
-  return order.kind === 'symptom_monitor'
-}
 
 function buildFeed(
   checkins: LocalCheckin[],

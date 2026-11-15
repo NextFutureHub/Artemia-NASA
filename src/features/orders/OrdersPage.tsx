@@ -4,6 +4,7 @@ import { useSession } from '../../app/session.tsx'
 import { PageIntro } from '../../components/FormChrome.tsx'
 import { Banner, Button, Card, Field } from '../../components/ui.tsx'
 import { buildCareOrderResponse } from '../../domain/careOrder.ts'
+import { isPersonalCareTask } from '../../domain/careTaskPrivacy.ts'
 import { careKindLabel, careStatusLabel } from '../../domain/labels.ts'
 import { formatZoned } from '../../domain/clock.ts'
 import { commitCareOrderResponse, listCareOrders } from '../../data/local/careOrders.ts'
@@ -79,7 +80,7 @@ export function OrdersPage() {
       {visible.length === 0 ? <p className="text-muted">{tab === 'active' ? t(locale, 'careEmpty') : t(locale, 'careHistoryEmpty')}</p> : null}
       {visible.map((order) => {
         const stale = order.due_at ? Date.now() - new Date(order.due_at).getTime() > 0 && order.status === 'active' : false
-        const personal = order.kind === 'symptom_monitor'
+        const personal = isPersonalCareTask(order)
         const expanded = openId === order.id || !personal
         const title = personal && !expanded ? t(locale, 'personalTask') : order.title
         return (
