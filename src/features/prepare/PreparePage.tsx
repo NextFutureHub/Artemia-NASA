@@ -20,16 +20,26 @@ export function PreparePage() {
   const [reportOpen, setReportOpen] = useState(false)
   const [timezone, setTimezone] = useState('UTC')
   const [zoneQuery, setZoneQuery] = useState('')
+  const [zonePage, setZonePage] = useState(0)
   const [reminderEnabled, setReminderEnabled] = useState(false)
   const [reminderTime, setReminderTime] = useState('08:00')
-  const [personal, setPersonal] = useState(false)
   const [sensitive, setSensitive] = useState<'device_only' | 'assigned_doctor'>('device_only')
   const [exchange, setExchange] = useState(false)
   const [bundle, setBundle] = useState<PreparationBundle | null>(null)
   const [checks, setChecks] = useState<CheckState[]>([])
   const [otherOwner, setOtherOwner] = useState(false)
   const [busy, setBusy] = useState(false)
-  const zones = useMemo(() => timeZones().filter((zone) => zone.toLowerCase().includes(zoneQuery.toLowerCase())).slice(0, 12), [zoneQuery])
+  const filteredZones = useMemo(
+    () => timeZones().filter((zone) => zone.toLowerCase().includes(zoneQuery.toLowerCase())),
+    [zoneQuery],
+  )
+  const zonePageCount = Math.max(1, Math.ceil(filteredZones.length / ZONE_PAGE_SIZE))
+  const safeZonePage = Math.min(zonePage, zonePageCount - 1)
+  const zones = filteredZones.slice(safeZonePage * ZONE_PAGE_SIZE, safeZonePage * ZONE_PAGE_SIZE + ZONE_PAGE_SIZE)
+
+  useEffect(() => {
+    setZonePage(0)
+  }, [zoneQuery])
 
   useEffect(() => {
     if (!session.token) return
@@ -37,7 +47,6 @@ export function PreparePage() {
       if (!isBundle(response.body)) return
       setBundle(response.body)
       setTimezone(response.body.profile.timezone || 'UTC')
-      setPersonal(response.body.personal_preferences.reproductive_enabled)
     })
   }, [session.token])
 
@@ -101,10 +110,10 @@ export function PreparePage() {
       timezone,
       reminderTime: reminderEnabled ? reminderTime : null,
       reminderEnabled,
-      reproductiveEnabled: personal,
+      reproductiveEnabled: bundle?.personal_preferences.reproductive_enabled ?? false,
       sensitiveSharing: sensitive,
       generalExchange: exchange,
-        storagePersisted: persisted,
+      storagePersisted: persisted,
     }
   }
 
@@ -143,15 +152,48 @@ export function PreparePage() {
       {step === 0 && !bundle ? <Banner tone="attention">{t(locale, 'firstPrepareOffline')}</Banner> : null}
       {step === 1 ? (
         <section className="flex flex-col gap-4 rounded-xl border border-line bg-surface p-4">
-          <Field id="zone-query" label={t(locale, 'timezone')}>
-            <input id="zone-query" value={zoneQuery} onChange={(event) => setZoneQuery(event.target.value)} className="min-h-11 rounded-xl border border-line bg-canvas px-3" />
+          <Field id="zone-query" label={t(locale, 'timezone')} hint={timezone}>
+            <input
+              id="zone-query"
+              value={zoneQuery}
+              onChange={(event) => setZoneQuery(event.target.value)}
+              className="min-h-11 rounded-xl border border-line bg-canvas px-3"
+            />
           </Field>
-          <div className="flex flex-col gap-1">
-            {zones.map((zone) => (
-              <button key={zone} type="button" className={`min-h-11 rounded-xl px-3 text-left ${timezone === zone ? 'text-accent' : ''}`} onClick={() => setTimezone(zone)}>
-                {zone}
-              </button>
-            ))}
+          <div className="flex max-h-72 flex-col gap-1 overflow-y-auto rounded-xl border border-line bg-canvas p-1">
+            {zones.length === 0 ? (
+              <p className="px-3 py-2 text-sm text-muted">{t(locale, 'timezoneEmpty')}</p>
+            ) : (
+              zones.map((zone) => (
+                <button
+                  key={zone}
+                  type="button"
+                  className={`min-h-11 shrink-0 rounded-xl px-3 text-left ${timezone === zone ? 'text-accent' : ''}`}
+                  onClick={() => setTimezone(zone)}
+                >
+                  {zone}
+                </button>
+              ))
+            )}
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Button
+              variant="quiet"
+              disabled={safeZonePage <= 0}
+              onClick={() => setZonePage((page) => Math.max(0, page - 1))}
+            >
+              {t(locale, 'timezonePrev')}
+            </Button>
+            <p className="numeric text-sm text-muted">
+              {t(locale, 'timezonePage', { current: safeZonePage + 1, total: zonePageCount })}
+            </p>
+            <Button
+              variant="quiet"
+              disabled={safeZonePage >= zonePageCount - 1}
+              onClick={() => setZonePage((page) => Math.min(zonePageCount - 1, page + 1))}
+            >
+              {t(locale, 'timezoneNext')}
+            </Button>
           </div>
           <label className="flex min-h-11 items-center gap-2">
             <input type="checkbox" checked={reminderEnabled} onChange={(event) => setReminderEnabled(event.target.checked)} />
@@ -159,11 +201,6 @@ export function PreparePage() {
           </label>
           <input type="time" value={reminderTime} onChange={(event) => setReminderTime(event.target.value)} className="min-h-11 rounded-xl border border-line bg-canvas px-3" />
           <p className="text-sm text-muted">{t(locale, 'reminderHint')}</p>
-          <label className="flex min-h-11 items-center gap-2">
-            <input type="checkbox" checked={personal} onChange={(event) => setPersonal(event.target.checked)} />
-            {t(locale, 'personalToggle')}
-          </label>
-          <p className="text-sm text-muted">{t(locale, 'personalHint')}</p>
           <fieldset>
             <legend>{t(locale, 'sensitiveMode')}</legend>
             <label className="flex min-h-11 items-center gap-2">
@@ -259,7 +296,10 @@ async function storageIsLow(): Promise<boolean> {
   }
 }
 
+const ZONE_PAGE_SIZE = 12
+
 function timeZones(): string[] {
   const intl = Intl as typeof Intl & { supportedValuesOf?: (key: string) => string[] }
-  return intl.supportedValuesOf?.('timeZone') ?? ['UTC']
+  const zones = intl.supportedValuesOf?.('timeZone') ?? ['UTC']
+  return zones.includes('UTC') ? zones : ['UTC', ...zones]
 }

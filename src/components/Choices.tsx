@@ -6,16 +6,18 @@ export function ChoiceButtons<T extends string>({
   options,
   onChange,
   locale,
+  hideLegend = false,
 }: {
   labelText: string
   value: T | null
   options: Array<{ value: T; label: { ru: string; en: string } }>
   onChange: (value: T) => void
   locale: Locale
+  hideLegend?: boolean
 }) {
   return (
     <fieldset>
-      <legend className="mb-2 text-sm">{labelText}</legend>
+      <legend className={hideLegend ? 'sr-only' : 'mb-2 text-sm'}>{labelText}</legend>
       <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={labelText}>
         {options.map((option) => {
           const selected = value === option.value

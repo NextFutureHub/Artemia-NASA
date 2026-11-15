@@ -59,6 +59,13 @@ export function formatUtcClock(value: Date): string {
   return `${hours}:${minutes}:${seconds} UTC`
 }
 
+/** Compact UTC clock for assessment headers (HH:MM UTC). */
+export function formatUtcHm(value: Date): string {
+  const hours = String(value.getUTCHours()).padStart(2, '0')
+  const minutes = String(value.getUTCMinutes()).padStart(2, '0')
+  return `${hours}:${minutes} UTC`
+}
+
 function zoneParts(value: Date, timeZone: string): Record<string, string> {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone,

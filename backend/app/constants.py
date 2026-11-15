@@ -24,7 +24,7 @@ CARE_ORDER_DECISIONS = ("done", "skipped", "acknowledged", "unable")
 MAX_BODY_BYTES = 256 * 1024
 
 ANSWER_STATUSES = ("answered", "unknown", "declined", "not_applicable")
-OVERALL_STATES = ("very_poor", "poor", "fair", "good", "very_good")
+OVERALL_STATES = ("very_poor", "poor", "fair", "good", "very_good", "cannot_assess")
 EMOTIONAL_STATES = ("calm", "tense", "low", "elevated", "other", "declined")
 CONTEXT_CODES = ("after_sleep", "after_exertion", "before_sleep", "other")
 SYMPTOM_CODES = (

@@ -5,7 +5,7 @@ import { useSession } from '../../app/session.tsx'
 import { ChoiceButtons } from '../../components/Choices.tsx'
 import { OptionalGate, ReviewLine, StepRail } from '../../components/FormChrome.tsx'
 import { AppDialog, Banner, Button, Field } from '../../components/ui.tsx'
-import { dateToZonedInput, formatZoned, localDateInZone, zonedInputToDate } from '../../domain/clock.ts'
+import { dateToZonedInput, formatUtcHm, formatZoned, localDateInZone, missionDay, zonedInputToDate } from '../../domain/clock.ts'
 import {
   buildGeneralPayload,
   checkinSteps,
@@ -70,6 +70,10 @@ export function CheckinPage() {
   const [measurements, setMeasurements] = useState<LocalMeasurement[]>([])
   const [failure, setFailure] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [contactOpen, setContactOpen] = useState(false)
+  const [procedureOpen, setProcedureOpen] = useState(false)
+  const [clockNow, setClockNow] = useState(() => new Date())
+  const [personalEnabled, setPersonalEnabled] = useState(profile?.reproductive_enabled ?? false)
   const [sectionEnabled, setSectionEnabled] = useState(profile?.reproductive_enabled ?? false)
   const [sectionSharing, setSectionSharing] = useState<SharingMode>(profile?.sensitive_sharing ?? 'device_only')
   const [measureChoice, setMeasureChoice] = useState<'fill' | 'skip' | null>(null)
@@ -79,6 +83,17 @@ export function CheckinPage() {
   draftRef.current = draft
   const form = useForm<CheckinDraftValues>({ defaultValues: emptyCheckinDraft('daily', '') })
   const values = form.watch()
+
+  useEffect(() => {
+    if (!profile) return
+    setPersonalEnabled(profile.reproductive_enabled)
+    setSectionSharing(profile.sensitive_sharing)
+  }, [profile?.owner_id, profile?.reproductive_enabled, profile?.sensitive_sharing])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockNow(new Date()), 30_000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     if (!profile) return
@@ -136,7 +151,7 @@ export function CheckinPage() {
       ...emptyCheckinDraft(next.values.type, next.values.recordedAtLocal, next.values.personalSharing ?? 'device_only'),
       ...next.values,
     })
-    const visible = checkinSteps(profile?.reproductive_enabled ?? false, values.type ?? 'daily')
+    const visible = checkinSteps(profile?.reproductive_enabled ?? personalEnabled, values.type ?? 'daily')
     setDraft({ ...next, values })
     setStep(visible.includes(next.step) ? next.step : 'general')
     form.reset(values)
@@ -146,7 +161,7 @@ export function CheckinPage() {
 
   if (!profile) return null
   const activeProfile = profile
-  const steps = checkinSteps(activeProfile.reproductive_enabled, values.type ?? 'daily')
+  const steps = checkinSteps(personalEnabled, values.type ?? 'daily')
   const timeZone = profile.timezone
   const errorFor = (path: string) => {
     const issue = issues.find((item) => item.path === path)
@@ -154,7 +169,7 @@ export function CheckinPage() {
   }
 
   function go(next: CheckinStep) {
-    const currentIssues = issuesForStep(step, form.getValues(), timeZone, new Date(), activeProfile.reproductive_enabled)
+    const currentIssues = issuesForStep(step, form.getValues(), timeZone, new Date(), personalEnabled)
     if (steps.indexOf(next) > steps.indexOf(step) && currentIssues.length > 0) {
       setIssues(currentIssues)
       document.getElementById(currentIssues[0]?.path ?? '')?.focus()
@@ -173,7 +188,7 @@ export function CheckinPage() {
     const now = new Date()
     const currentValues = form.getValues()
     const built = buildGeneralPayload(currentValues, timeZone, now)
-    const personalBuilt = buildPersonalPayload(currentValues, profile.reproductive_enabled)
+    const personalBuilt = buildPersonalPayload(currentValues, personalEnabled)
     const combined = [...built.issues, ...personalBuilt.issues]
     if (!built.payload || combined.length > 0) {
       saveLock.current = false
@@ -248,6 +263,15 @@ export function CheckinPage() {
   const later = recorded ? isFilledLater(recorded, new Date()) : false
   const isChange = values.type === 'change'
   const stepItems = steps.map((item) => ({ id: item, label: t(locale, stepKey(item)) }))
+  const day = session.mission ? missionDay(new Date(session.mission.start_at), clockNow) : null
+  const dayText =
+    day?.phase === 'in_mission'
+      ? t(locale, 'missionDay', { day: day.day })
+      : day?.phase === 'before'
+        ? t(locale, 'beforeStart', { days: day.days })
+        : ''
+  const procedureText = session.mission?.emergency_contact_text.trim() ?? ''
+  const stepIndex = Math.max(0, steps.findIndex((item) => item === step))
 
   return (
     <form
@@ -262,17 +286,35 @@ export function CheckinPage() {
         else go(steps[steps.indexOf(step) + 1] ?? step)
       }}
     >
-      <StepRail steps={stepItems} current={step} locale={locale} />
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted">
-          {isChange ? t(locale, 'change') : t(locale, 'daily')} · {t(locale, 'localHint')}
-        </p>
-        {savedAt ? (
-          <p className="numeric text-sm text-muted">
-            {t(locale, 'draftSaved', { time: formatZoned(new Date(savedAt), timeZone, locale === 'ru' ? 'ru' : 'en') })}
+      {step === 'general' ? (
+        <header className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <p className="text-xs tracking-[0.14em] text-muted">{t(locale, 'crewHealthBrand')}</p>
+            <span className="rounded-full border border-accent/40 px-3 py-1 text-xs text-accent">{t(locale, 'statusLocal')}</span>
+          </div>
+          <h1 className="text-3xl">{isChange ? t(locale, 'change') : t(locale, 'dailyAssessment')}</h1>
+          <p className="text-sm text-muted">
+            {activeProfile.callsign}
+            {dayText ? ` · ${dayText}` : ''}
+            {' · '}
+            <span className="numeric">{formatUtcHm(clockNow)}</span>
           </p>
-        ) : null}
-      </div>
+        </header>
+      ) : (
+        <StepRail steps={stepItems} current={step} locale={locale} />
+      )}
+      {step !== 'general' ? (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-muted">
+            {isChange ? t(locale, 'change') : t(locale, 'daily')} · {t(locale, 'localHint')}
+          </p>
+          {savedAt ? (
+            <p className="numeric text-sm text-muted">
+              {t(locale, 'draftSaved', { time: formatZoned(new Date(savedAt), timeZone, locale === 'ru' ? 'ru' : 'en') })}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       {isChange ? <Banner tone="neutral">{t(locale, 'changePathBanner')}</Banner> : null}
       {failure ? <Banner tone="danger">{failure}</Banner> : null}
       {issues.length > 0 ? (
@@ -287,17 +329,73 @@ export function CheckinPage() {
       ) : null}
 
       {step === 'general' ? (
-        <section className="flex flex-col gap-4">
-          <Field id="recordedAtLocal" label={t(locale, 'recordedAt')} hint={timeZone} error={errorFor('recordedAtLocal')}>
+        <section className="flex flex-col gap-5">
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="text-xl">{t(locale, 'overall')}</h2>
+              <p className="numeric text-sm text-muted">{t(locale, 'stepOf', { current: stepIndex + 1, total: steps.length })}</p>
+            </div>
+            <p className="text-sm text-muted">{t(locale, 'overallPrompt')}</p>
+            <ChoiceButtons
+              locale={locale}
+              labelText={t(locale, 'overall')}
+              value={values.overallState}
+              onChange={(value) => form.setValue('overallState', value)}
+              options={options(overallLabels)}
+              hideLegend
+            />
+          </div>
+
+          <Score
+            labelText={t(locale, 'fatigue')}
+            value={values.fatigue}
+            max={10}
+            min={0}
+            onChange={(value) => form.setValue('fatigue', value)}
+            skip={values.fatigueSkip}
+            onSkip={(value) => form.setValue('fatigueSkip', value)}
+            locale={locale}
+            mode="slider"
+            minLabel={t(locale, 'fatigueMin')}
+            maxLabel={t(locale, 'fatigueMax')}
+          />
+          <Score
+            labelText={t(locale, 'stress')}
+            value={values.stress}
+            max={10}
+            min={0}
+            onChange={(value) => form.setValue('stress', value)}
+            skip={values.stressSkip}
+            onSkip={(value) => form.setValue('stressSkip', value)}
+            locale={locale}
+            mode="slider"
+            minLabel={t(locale, 'stressMin')}
+            maxLabel={t(locale, 'stressMax')}
+          />
+          <p className="text-sm text-muted">{t(locale, 'notATest')}</p>
+
+          <div className="flex flex-col gap-3 rounded-xl border border-attention/50 px-4 py-3">
+            <div>
+              <p className="font-medium text-attention">{t(locale, 'urgentSymptomTitle')}</p>
+              <p className="mt-1 text-sm text-muted">{t(locale, 'urgentSymptomLead')}</p>
+            </div>
+            <Button type="button" variant="secondary" onClick={() => setContactOpen(true)}>
+              {t(locale, 'openMedicalContact')}
+            </Button>
+          </div>
+
+          {isChange ? <p className="rounded-xl border border-dashed border-line px-4 py-3 text-sm text-muted">{t(locale, 'sleepSkippedForChange')}</p> : null}
+
+          <Field
+            id="recordedAtLocal"
+            label={t(locale, 'recordedAt')}
+            hint={`${t(locale, 'observationUtcHint')}${recorded ? ` · ${formatUtcHm(recorded)}` : ''}`}
+            error={errorFor('recordedAtLocal')}
+          >
             <input id="recordedAtLocal" type="datetime-local" className="min-h-11 rounded-xl border border-line bg-canvas px-3" {...form.register('recordedAtLocal')} />
           </Field>
           {later ? <p className="text-sm text-muted">{t(locale, 'filledLater')}</p> : null}
-          <p className="text-sm text-muted">{t(locale, 'notATest')}</p>
-          <ChoiceButtons locale={locale} labelText={t(locale, 'overall')} value={values.overallState} onChange={(value) => form.setValue('overallState', value)} options={options(overallLabels)} />
-          {isChange ? <p className="rounded-xl border border-dashed border-line px-4 py-3 text-sm text-muted">{t(locale, 'sleepSkippedForChange')}</p> : null}
-          <p className="text-sm text-muted">{t(locale, 'valueZeroHint')}</p>
-          <Score labelText={t(locale, 'fatigue')} value={values.fatigue} max={10} min={0} onChange={(value) => form.setValue('fatigue', value)} skip={values.fatigueSkip} onSkip={(value) => form.setValue('fatigueSkip', value)} locale={locale} />
-          <Score labelText={t(locale, 'stress')} value={values.stress} max={10} min={0} onChange={(value) => form.setValue('stress', value)} skip={values.stressSkip} onSkip={(value) => form.setValue('stressSkip', value)} locale={locale} />
+
           <ChoiceButtons locale={locale} labelText={t(locale, 'emotional')} value={values.emotional} onChange={(value) => form.setValue('emotional', value)} options={options(emotionalLabels)} />
           {values.emotional === 'other' ? (
             <Field id="emotionalNote" label={t(locale, 'other')} error={errorFor('emotionalNote')}>
@@ -308,6 +406,19 @@ export function CheckinPage() {
           <Field id="comment" label={t(locale, 'comment')} hint={`${values.comment.length}/1000`}>
             <textarea id="comment" maxLength={1000} className="min-h-24 rounded-xl border border-line bg-canvas px-3 py-2" {...form.register('comment')} />
           </Field>
+          <label className="flex min-h-11 items-center gap-2">
+            <input
+              type="checkbox"
+              checked={personalEnabled}
+              onChange={(event) => {
+                const enabled = event.target.checked
+                setPersonalEnabled(enabled)
+                void updateProfile(db, { ...activeProfile, reproductive_enabled: enabled }).then(() => session.refreshLocal())
+              }}
+            />
+            {t(locale, 'personalToggle')}
+          </label>
+          <p className="text-sm text-muted">{t(locale, 'personalHint')}</p>
         </section>
       ) : null}
 
@@ -537,7 +648,7 @@ export function CheckinPage() {
 
       {step === 'personal' ? (
         <PersonalStep form={form} values={values} locale={locale} errorFor={errorFor} onConfigure={() => {
-          setSectionEnabled(profile.reproductive_enabled)
+          setSectionEnabled(personalEnabled)
           setSectionSharing(profile.sensitive_sharing)
           setSettingsOpen(true)
         }} />
@@ -615,7 +726,7 @@ export function CheckinPage() {
               <ReviewLine label={t(locale, 'reviewSymptoms')} value={symptomReviewLabel(locale, values)} />
               <ReviewLine
                 label={t(locale, 'reviewPersonal')}
-                value={personalLine(locale, profile.reproductive_enabled, values.personalFill, values.personalSharing, share)}
+                value={personalLine(locale, personalEnabled, values.personalFill, values.personalSharing, share)}
               />
               <ReviewLine
                 label={t(locale, 'reviewMeasurements')}
@@ -633,7 +744,7 @@ export function CheckinPage() {
               <input type="checkbox" checked={share} onChange={(event) => setShare(event.target.checked)} />
               {t(locale, 'exchange')}
             </label>
-            {profile.reproductive_enabled && values.personalSharing === 'assigned_doctor' && !share ? (
+            {personalEnabled && values.personalSharing === 'assigned_doctor' && !share ? (
               <p className="text-sm text-attention">{t(locale, 'personalNeedsGeneral')}</p>
             ) : null}
             <p className="text-sm text-muted">{t(locale, 'exchangeHint')}</p>
@@ -647,25 +758,25 @@ export function CheckinPage() {
         </section>
       ) : null}
 
-      <div className="fixed inset-x-0 bottom-0 flex flex-wrap gap-2 border-t border-line bg-canvas p-3">
+      <div className="fixed inset-x-0 bottom-0 flex flex-wrap items-center gap-2 border-t border-line bg-canvas p-3">
         {step === 'general' ? (
-          <Button type="button" variant="quiet" onClick={() => navigate('/onboard/today')}>
-            {t(locale, 'cancel')}
-          </Button>
+          <p className="mr-auto text-sm text-muted">{t(locale, 'autoSaveDraft')}</p>
         ) : (
           <Button type="button" variant="quiet" onClick={() => go(steps[steps.indexOf(step) - 1] ?? 'general')}>
             {t(locale, 'back')}
           </Button>
         )}
-        <Button type="button" variant="secondary" onClick={() => navigate('/onboard/today')}>
-          {t(locale, 'saveDraftExit')}
-        </Button>
+        {step !== 'general' ? (
+          <Button type="button" variant="secondary" onClick={() => navigate('/onboard/today')}>
+            {t(locale, 'saveDraftExit')}
+          </Button>
+        ) : null}
         {step === 'review' ? (
           <Button type="submit" disabled={saving}>
             {t(locale, 'saveRecord')}
           </Button>
         ) : (
-          <Button type="submit">{t(locale, 'continue')}</Button>
+          <Button type="submit">{t(locale, 'continue')} →</Button>
         )}
       </div>
 
@@ -735,6 +846,7 @@ export function CheckinPage() {
           type="button"
           onClick={() => {
             const next = { ...profile, reproductive_enabled: sectionEnabled, sensitive_sharing: sectionSharing }
+            setPersonalEnabled(sectionEnabled)
             void updateProfile(db, next).then(() => session.refreshLocal())
             form.setValue('personalSharing', sectionSharing)
             if (!sectionEnabled) setStep('symptoms')
@@ -742,6 +854,34 @@ export function CheckinPage() {
           }}
         >
           {t(locale, 'saveSettings')}
+        </Button>
+      </AppDialog>
+      <AppDialog open={contactOpen} onOpenChange={setContactOpen} title={t(locale, 'contact')} description={t(locale, 'noEmergencyPromise')}>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => {
+            setContactOpen(false)
+            navigate('/onboard/reports/new?reason=reply_to_doctor')
+          }}
+        >
+          {t(locale, 'prepareMessage')}
+        </Button>
+        <Button
+          type="button"
+          onClick={() => {
+            setProcedureOpen(true)
+          }}
+        >
+          {t(locale, 'showProcedure')}
+        </Button>
+        <Button type="button" variant="quiet" onClick={() => setContactOpen(false)}>
+          {t(locale, 'cancel')}
+        </Button>
+      </AppDialog>
+      <AppDialog open={procedureOpen} onOpenChange={setProcedureOpen} title={t(locale, 'showProcedure')} description={procedureText || t(locale, 'procedureMissing')}>
+        <Button type="button" variant="quiet" onClick={() => setProcedureOpen(false)}>
+          {t(locale, 'close')}
         </Button>
       </AppDialog>
     </form>
@@ -787,6 +927,9 @@ function Score({
   skip,
   onSkip,
   locale,
+  mode = 'buttons',
+  minLabel,
+  maxLabel,
 }: {
   labelText: string
   value: number | null
@@ -796,8 +939,52 @@ function Score({
   skip: boolean
   onSkip: (value: boolean) => void
   locale: 'ru' | 'en'
+  mode?: 'buttons' | 'slider'
+  minLabel?: string
+  maxLabel?: string
 }) {
   const points = Array.from({ length: max - min + 1 }, (_, index) => min + index)
+  if (mode === 'slider') {
+    const shown = skip || value === null ? null : value
+    return (
+      <fieldset className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <legend className="text-sm">{labelText}</legend>
+          <p className="numeric text-sm text-muted">
+            {min}–{max}
+          </p>
+        </div>
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={1}
+          value={shown ?? min}
+          disabled={skip}
+          aria-label={labelText}
+          className={`h-2 w-full cursor-pointer accent-accent disabled:opacity-40 ${shown === null ? 'opacity-50' : ''}`}
+          onChange={(event) => {
+            onSkip(false)
+            onChange(Number(event.target.value))
+          }}
+        />
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted">
+          <span>{minLabel ?? (min === 0 ? t(locale, 'scaleNone') : String(min))}</span>
+          <span className="numeric text-ink">{shown === null ? t(locale, 'answerNone') : `${shown}/${max}`}</span>
+          <span>{maxLabel ?? `${max} ${t(locale, 'scaleMax')}`}</span>
+        </div>
+        <button
+          type="button"
+          aria-pressed={skip}
+          className={`min-h-11 self-start rounded-xl border px-3 ${skip ? 'border-accent text-accent' : 'border-line'}`}
+          onClick={() => onSkip(true)}
+        >
+          {t(locale, 'cannotAssess')}
+        </button>
+        {shown === 0 ? <p className="text-sm text-muted">{t(locale, 'answerZero')}</p> : null}
+      </fieldset>
+    )
+  }
   return (
     <fieldset>
       <legend className="mb-2 text-sm">{labelText}</legend>
@@ -821,7 +1008,7 @@ function Score({
         </button>
       </div>
       <p className="mt-1 text-sm text-muted">
-        {min === 0 ? `${t(locale, 'scaleNone')} · ${max} ${t(locale, 'scaleMax')} · ` : null}
+        {minLabel && maxLabel ? `${minLabel} · ${maxLabel} · ` : min === 0 ? `${t(locale, 'scaleNone')} · ${max} ${t(locale, 'scaleMax')} · ` : null}
         {skip
           ? t(locale, 'answerDeclined')
           : value === 0

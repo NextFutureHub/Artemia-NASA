@@ -1,7 +1,7 @@
 export const ANSWER_STATUSES = ['answered', 'unknown', 'declined', 'not_applicable'] as const
 export type AnswerStatus = (typeof ANSWER_STATUSES)[number]
 
-export const OVERALL_STATES = ['very_poor', 'poor', 'fair', 'good', 'very_good'] as const
+export const OVERALL_STATES = ['very_poor', 'poor', 'fair', 'good', 'very_good', 'cannot_assess'] as const
 export type OverallState = (typeof OVERALL_STATES)[number]
 
 export const EMOTIONAL_STATES = ['calm', 'tense', 'low', 'elevated', 'other', 'declined'] as const
